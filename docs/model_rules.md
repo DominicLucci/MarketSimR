@@ -75,3 +75,81 @@ With `Exchange(check_invariants=True)` (`marketsim/checks.py`):
 - The same file checks that the random streams really do produce partial fills,
   cancellations, expiries and each kind of rejection.
 - Replaying a saved list of commands reproduces the event log exactly (`test_replay.py`).
+
+## 7. Underlying value and private signals (provisional)
+
+- The value starts at $100.00 (10,000 ticks). On each step, with probability `news_prob`
+  (2%), news arrives and the value is multiplied by `exp(x)`, where `x` is normal with
+  standard deviation `news_sigma` (0.5%). Otherwise it stays put. It is always positive.
+  Discrete news makes "how fast do trades reflect a change" a well-posed question.
+- A trader's signal is `value + sigma x z`, where `z` is a standard normal draw from the
+  trader's own random stream and `sigma` depends only on its group: $0.10 for the
+  better-informed group, $1.00 for the others.
+- Both groups see the same public quotes and get the same endowment ($1,000.00 and 10
+  shares), the same arrival process and the same decision rule. The decision rule is a
+  function that receives no group label (`marketsim/traders.py`).
+
+## 8. Trader behaviour (provisional)
+
+Each time a trader arrives:
+
+1. Any order it still has resting is cancelled. A trader has at most one live order.
+2. It draws an inventory need uniformly from -5 to +5 shares. Its target is its starting
+   10 shares plus that need. This is the trader's reason to trade.
+3. **Inventory sets side and size.** Below target it buys, above target it sells, at
+   target it sends nothing. Size is the gap to target, capped at 5 shares and by what the
+   account can fund.
+4. **The signal sets the price.** A buyer bids `signal - margin` rounded down. A seller
+   offers `signal + margin` rounded up. The margin is $0.20.
+5. The order expires after 80 steps if still resting.
+
+`python -m marketsim.run --seed 1 --informed-share 0.25 --trace-step 1` prints one
+decision from its inputs to its fills.
+
+### What this baseline assumes, and what that limits
+
+- **Traders do not learn from prices.** A less-informed trader treats its own noisy
+  signal as its estimate and ignores what the quotes imply. Every trade is zero-sum on a
+  common value, so the less-informed group loses on average and keeps trading anyway. This
+  makes the mechanism easy to trace, and it means the model cannot show less-informed
+  traders protecting themselves by widening quotes or withdrawing.
+- **Inventory does not move the price a trader will accept.** Need decides only side and
+  size. Two equally informed traders with opposite needs both hold out for the margin and
+  mostly do not trade with each other unless news has made a resting quote stale.
+- **No trader takes a position beyond its inventory target.** Better-informed traders
+  profit by trading on better terms in the direction they already wanted to go, not by
+  speculating without limit.
+
+These three are the first things to revisit if the results need to speak to real markets.
+
+## 9. Randomness and paired runs
+
+Everything random comes from the seed through separate streams (`marketsim/world.py`):
+news timing, news size, the arrival schedule, the order in which traders become informed,
+and one private stream per trader. Consequences, each tested in `tests/test_simulation.py`:
+
+- Changing the informed share, the margin or any trader setting leaves the value path and
+  the arrival schedule untouched.
+- A trader's k-th arrival gets the same standardized signal error and the same inventory
+  need in every run with that seed.
+- Informed groups are nested: going from 10% to 25% adds six traders and removes none.
+- **Information access:** multiplying all values after step 300 by 1.5 leaves every event
+  and decision before step 300 unchanged.
+- **Equal-information control:** with one signal precision for both groups, runs with 0%,
+  10% and 75% labelled "better informed" produce identical event logs.
+- **Replay:** model version + configuration (which includes the seed) reproduce the event
+  log, balances and summary exactly.
+
+## 10. Measures (`marketsim/metrics.py`)
+
+All in ticks, one row per run. Anything that cannot be computed is reported as
+unavailable, never as zero.
+
+- **Price accuracy:** mean over trades of `|trade price - value at that step|`.
+- **Liquidity:** quotes are sampled every 10 steps after the arriving trader acts. Reported:
+  mean best offer minus best bid when both exist, mean shares at each best quote, the share
+  of samples with no bid, with no offer and with both, and traded volume.
+- **Trader outcomes:** per group, the mean per-trader wealth change with stock marked at
+  the underlying value at the start and end, and the mean trading gain, which is final
+  wealth minus the final wealth of the same trader had it never traded. Trading gains sum
+  to zero across all traders.
