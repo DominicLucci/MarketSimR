@@ -11,9 +11,10 @@ independent observations; the seed is the unit.
 
 Three parts:
 
-1. main        the configured gap in signal precision
-2. narrow_gap  sensitivity check: the better-informed error is 5x larger (a smaller gap)
-3. control     equal information for both groups; relabelling must change nothing
+1. main                the configured gap in signal precision
+2. narrow_gap          sensitivity: the better-informed error is 5x larger (a smaller gap)
+3. short_lived_orders  sensitivity: resting orders expire after 20 steps instead of 80
+4. control             equal information for both groups; relabelling must change nothing
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from scipy import stats
 from .config import MODEL_VERSION, SimConfig
 from .events import to_record
 from .metrics import summarize
+from .news import HORIZONS, WINDOW, last_trade_path, response_curve
 from .simulation import run_simulation
 
 SHARES = (0.0, 0.10, 0.25, 0.50, 0.75)
@@ -41,11 +43,18 @@ BASELINE_SHARE = 0.0
 VARIANTS: dict[str, dict[str, Any]] = {
     "main": {},
     "narrow_gap": {"sigma_informed": 50.0},
+    "short_lived_orders": {"order_lifetime": 20},
 }
 # Measures that exist at every share, compared with the 0% baseline within a seed.
-MARKET_MEASURES = ("price_error", "spread", "volume", "n_trades", "bid_size", "ask_size", "share_two_sided")
+MARKET_MEASURES = (
+    "price_error", "mid_error", "spread", "volume", "n_trades", "bid_size", "ask_size", "share_two_sided",
+    *(f"news_in_mid_{h}" for h in HORIZONS), *(f"news_in_trades_{h}" for h in HORIZONS), "news_half_life_mid",
+)
 # Measures reported as levels. Some are unavailable when a group is empty.
 LEVEL_MEASURES = MARKET_MEASURES + (
+    "price_error_both_informed",
+    "price_error_mixed",
+    "price_error_neither_informed",
     "trading_gain_informed",
     "trading_gain_uninformed",
     "gain_gap",
@@ -70,17 +79,41 @@ def mean_interval(values: pd.Series) -> dict[str, Any]:
     return out
 
 
-def run_grid(base: SimConfig, seeds: list[int]) -> pd.DataFrame:
-    """One row per run: every variant x seed x informed share."""
-    rows = []
+def run_grid(base: SimConfig, seeds: list[int]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Every variant x seed x informed share.
+
+    Returns one row per run, and the news-response curve of every run in long form
+    (one row per run and number of steps after news).
+    """
+    rows, curves = [], []
     for variant, overrides in VARIANTS.items():
         for seed in seeds:
             for share in SHARES:
                 config = base.with_(seed=seed, informed_share=share, **overrides)
-                row = {"variant": variant, **summarize(run_simulation(config))}
+                result = run_simulation(config)
+                row = {"variant": variant, **summarize(result)}
                 informed, others = row["trading_gain_informed"], row["trading_gain_uninformed"]
                 row["gain_gap"] = None if informed is None or others is None else informed - others
                 rows.append(row)
+                in_mid = response_curve(result.value_path, result.mid_path)["reflected"]
+                in_trades = response_curve(result.value_path, last_trade_path(result.events, config.n_steps))["reflected"]
+                for k in range(WINDOW + 1):
+                    curves.append(
+                        {"variant": variant, "seed": seed, "informed_share": share, "steps_after_news": k,
+                         "in_mid": in_mid[k], "in_trades": in_trades[k]}
+                    )
+    return pd.DataFrame(rows), pd.DataFrame(curves)
+
+
+def news_table(curves: pd.DataFrame) -> pd.DataFrame:
+    """Share of news reflected k steps later: mean and 95% interval across seeds."""
+    rows = []
+    for (variant, share, k), group in curves.groupby(["variant", "informed_share", "steps_after_news"], sort=True):
+        for series in ("in_mid", "in_trades"):
+            rows.append(
+                {"variant": variant, "informed_share": share, "steps_after_news": k, "series": series,
+                 **mean_interval(group[series])}
+            )
     return pd.DataFrame(rows)
 
 
@@ -152,11 +185,12 @@ def run_experiment(base: SimConfig, n_seeds: int, out_dir: str | Path, chart: bo
     if not control["identical_within_every_seed"]:
         raise SystemExit(f"equal-information control failed for seeds {control['seeds_with_differences']}")
 
-    runs = run_grid(base, seeds)
-    levels, paired = levels_table(runs), paired_table(runs)
+    runs, curves = run_grid(base, seeds)
+    levels, paired, news = levels_table(runs), paired_table(runs), news_table(curves)
     runs.to_csv(out / "runs.csv", index=False)
     levels.to_csv(out / "levels.csv", index=False)
     paired.to_csv(out / "paired_differences.csv", index=False)
+    news.to_csv(out / "news_response.csv", index=False)
 
     base_settings = base.to_dict()
     del base_settings["seed"], base_settings["informed_share"]  # these two are varied
@@ -180,14 +214,15 @@ def run_experiment(base: SimConfig, n_seeds: int, out_dir: str | Path, chart: bo
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
     if chart:
-        from .charts import market_chart, outcomes_chart
+        from .charts import market_chart, news_chart, outcomes_chart
 
         market_chart(runs, paired, out / "market_measures.png")
         outcomes_chart(runs, levels, out / "trader_outcomes.png")
+        news_chart(news, n_seeds, out / "news_response.png")
     return out
 
 
-TABLES = ("runs.csv", "levels.csv", "paired_differences.csv")
+TABLES = ("runs.csv", "levels.csv", "paired_differences.csv", "news_response.csv")
 
 
 def check_results(reference_dir: str | Path, tolerance: float = 1e-9) -> list[str]:

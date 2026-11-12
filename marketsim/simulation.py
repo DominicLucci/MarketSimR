@@ -30,6 +30,8 @@ class RunResult:
     decisions: list[dict[str, Any]]  # one row per arrival: inputs and resulting action
     quote_samples: list[tuple[int, int | None, int, int | None, int]]  # time, bid, size, ask, size
     final_accounts: dict[int, tuple[int, int]] = field(default_factory=dict)  # cash, shares
+    # Mid-quote at the end of every step (after the arriving trader acts); NaN when a side is missing.
+    mid_path: np.ndarray = field(default_factory=lambda: np.empty(0))
 
 
 def run_simulation(
@@ -55,6 +57,7 @@ def run_simulation(
 
     decisions: list[dict[str, Any]] = []
     quote_samples: list[tuple[int, int | None, int, int | None, int]] = []
+    mid_path = np.full(config.n_steps, np.nan)
 
     for time in range(config.n_steps):
         value = float(values[time])  # 1. the value updates first
@@ -107,9 +110,11 @@ def run_simulation(
             }
         )
 
-        # 4. quotes are sampled on a fixed clock
+        # 4. quotes are recorded: the mid every step, the full top of book on a fixed clock
+        q = exchange.quotes()
+        if q.mid is not None:
+            mid_path[time] = q.mid
         if time % config.quote_sample_every == 0:
-            q = exchange.quotes()
             quote_samples.append((time, q.best_bid, q.bid_size, q.best_ask, q.ask_size))
 
     return RunResult(
@@ -122,4 +127,5 @@ def run_simulation(
         decisions=decisions,
         quote_samples=quote_samples,
         final_accounts={i: (a.cash, a.shares) for i, a in exchange.accounts.items()},
+        mid_path=mid_path,
     )

@@ -120,7 +120,13 @@ decision from its inputs to its fills.
   profit by trading on better terms in the direction they already wanted to go, not by
   speculating without limit.
 
-These three are the first things to revisit if the results need to speak to real markets.
+- **Resting orders are never refreshed.** A quote changes only when its owner next arrives
+  (on average every 40 steps) or when it expires. After news, even a better-informed
+  trader's old quote stays in the book at the old value until someone takes it. The
+  news-speed results depend on this: with orders that expire after 20 steps instead of 80
+  most of the slowdown at high informed shares goes away.
+
+These four are the first things to revisit if the results need to speak to real markets.
 
 ## 9. Randomness and paired runs
 
@@ -145,7 +151,17 @@ and one private stream per trader. Consequences, each tested in `tests/test_simu
 All in ticks, one row per run. Anything that cannot be computed is reported as
 unavailable, never as zero.
 
-- **Price accuracy:** mean over trades of `|trade price - value at that step|`.
+- **Trade price error:** mean over trades of `|trade price - value at that step|`. Also
+  reported separately for trades where both sides, one side or neither side is better
+  informed, because the mix of trades changes with the informed share.
+- **Mid-quote error:** mean of `|mid-quote - value|` over every step that has both a bid
+  and an offer. It does not depend on which trades happen.
+- **News response** (`marketsim/news.py`): for each isolated news event at step T (no other
+  news within 40 steps before or after), the share of the value change reflected k steps
+  later is `sign(V[T] - V[T-1]) x (P[T+k] - P[T-1]) / |V[T] - V[T-1]|`, where P is the
+  mid-quote or the last trade price. A run reports the ratio of sums over its events, at
+  5, 10, 20 and 40 steps, and the half-life: the first step at which half is reflected.
+  A run has about 14 isolated events, so these are the noisiest measures here.
 - **Liquidity:** quotes are sampled every 10 steps after the arriving trader acts. Reported:
   mean best offer minus best bid when both exist, mean shares at each best quote, the share
   of samples with no bid, with no offer and with both, and traded volume.

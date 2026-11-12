@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from marketsim.config import SimConfig
-from marketsim.experiment import SHARES, VARIANTS, check_results, mean_interval, paired_table, run_experiment
+from marketsim.experiment import MARKET_MEASURES, SHARES, VARIANTS, check_results, mean_interval, paired_table, run_experiment
 
 
 def test_mean_interval_matches_a_hand_calculation():
@@ -32,7 +32,7 @@ def test_paired_table_differences_within_seed_not_across():
     for seed, level in ((0, 10.0), (1, 500.0), (2, -40.0)):
         for step, share in enumerate(SHARES):
             row = {"variant": "main", "seed": seed, "informed_share": share}
-            row.update({m: level - step for m in ("price_error", "spread", "volume", "n_trades", "bid_size", "ask_size", "share_two_sided")})
+            row.update({m: level - step for m in MARKET_MEASURES})
             rows.append(row)
     rows[1]["spread"] = None  # seed 0 has no two-sided quotes at 10%: that pair must drop out
     table = paired_table(pd.DataFrame(rows))
@@ -51,20 +51,22 @@ def test_experiment_writes_a_complete_and_repeatable_result(tmp_path):
     second = run_experiment(base, 2, tmp_path / "b", chart=False)
 
     assert {p.name for p in first.iterdir()} == {
-        "manifest.json", "control.json", "runs.csv", "levels.csv",
-        "paired_differences.csv", "market_measures.png", "trader_outcomes.png",
+        "manifest.json", "control.json", "runs.csv", "levels.csv", "paired_differences.csv",
+        "news_response.csv", "market_measures.png", "trader_outcomes.png", "news_response.png",
     }
-    for name in ("manifest.json", "control.json", "runs.csv", "levels.csv", "paired_differences.csv"):
+    for name in ("manifest.json", "control.json", "runs.csv", "levels.csv", "paired_differences.csv", "news_response.csv"):
         assert (first / name).read_bytes() == (second / name).read_bytes(), name
 
     runs = pd.read_csv(first / "runs.csv")
     assert len(runs) == len(VARIANTS) * 2 * len(SHARES)
-    # The 0% baseline is the same market in both variants: nobody has the better signal.
-    baseline = runs[runs["informed_share"] == 0.0].drop(columns="variant")
-    assert baseline.iloc[:2].reset_index(drop=True).equals(baseline.iloc[2:].reset_index(drop=True))
+    # The 0% baseline is the same market in the two precision variants: nobody has the better signal.
+    baseline = runs[runs["informed_share"] == 0.0]
+    main = baseline[baseline["variant"] == "main"].drop(columns="variant").reset_index(drop=True)
+    narrow = baseline[baseline["variant"] == "narrow_gap"].drop(columns="variant").reset_index(drop=True)
+    assert main.equals(narrow)
 
     manifest = json.loads((first / "manifest.json").read_text())
-    assert manifest["runs"] == {"grid": 20, "control": 10} and manifest["seeds"] == [0, 1]
+    assert manifest["runs"] == {"grid": 30, "control": 10} and manifest["seeds"] == [0, 1]
     assert manifest["base_config"]["n_steps"] == 300
     assert json.loads((first / "control.json").read_text())["identical_within_every_seed"] is True
 

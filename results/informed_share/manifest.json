@@ -60,10 +60,13 @@
     "main": {},
     "narrow_gap": {
       "sigma_informed": 50.0
+    },
+    "short_lived_orders": {
+      "order_lifetime": 20
     }
   },
   "runs": {
-    "grid": 300,
+    "grid": 450,
     "control": 25
   },
   "unit_of_analysis": "seed; 95% t-interval of within-seed differences from the 0% baseline",

@@ -1,5 +1,7 @@
 # MarketSimR
 
+![tests](https://github.com/DominicLucci/MarketSimR/actions/workflows/tests.yml/badge.svg)
+
 An artificial exchange where software traders buy and sell one asset. The simulation knows
 the asset's underlying value. Each trader gets only a noisy private estimate of it, decides
 what price it will accept, and sends an order to a limit order book. Comparing the prices
@@ -14,8 +16,8 @@ The same market run twice on one seed: with 10% of traders well informed (left) 
 prices scatter around the underlying value, and with 50% (right) they hug it.
 
 > **Status: pilot.** The engine, market model, first experiment and local dashboard run
-> and are tested. The market configuration was chosen by the build agent and has not been
-> frozen, and setup has not been tried on a clean machine.
+> and are tested, and GitHub reinstalls and rechecks everything on each push. The market
+> configuration was chosen by the build agent and has not been frozen.
 > [docs/STATUS.md](docs/STATUS.md) lists what is done, what was checked and what is next.
 
 ## First result (pilot configuration)
@@ -27,16 +29,18 @@ value path, the same arrival schedule and the same per-trader luck, so each sett
 compared with the 0% baseline inside its own seed. Intervals are 95% t-intervals across
 the 30 seeds.
 
-| Better-informed share | Price error | Change from 0% [95% interval] | Quoted spread | Volume (shares) |
-| ---: | ---: | --- | ---: | ---: |
-| 0% | $0.44 | | $0.56 | 3,543 |
-| 10% | $0.38 | −$0.061 [−0.064, −0.057] | $0.49 | 3,461 |
-| 25% | $0.30 | −$0.136 [−0.142, −0.131] | $0.38 | 3,248 |
-| 50% | $0.25 | −$0.190 [−0.195, −0.184] | $0.24 | 2,616 |
-| 75% | $0.29 | −$0.150 [−0.159, −0.141] | $0.17 | 1,888 |
+| Better-informed share | Trade price error | Change from 0% [95% interval] | Mid-quote error | Change from 0% [95% interval] | Quoted spread | Volume (shares) |
+| ---: | ---: | --- | ---: | --- | ---: | ---: |
+| 0% | $0.44 | | $0.44 | | $0.56 | 3,543 |
+| 10% | $0.38 | −$0.061 [−0.064, −0.057] | $0.36 | −$0.077 [−0.083, −0.072] | $0.49 | 3,461 |
+| 25% | $0.30 | −$0.136 [−0.142, −0.131] | $0.26 | −$0.183 [−0.190, −0.177] | $0.38 | 3,248 |
+| 50% | $0.25 | −$0.190 [−0.195, −0.184] | $0.17 | −$0.273 [−0.280, −0.267] | $0.24 | 2,616 |
+| 75% | $0.29 | −$0.150 [−0.159, −0.141] | $0.15 | −$0.287 [−0.294, −0.280] | $0.17 | 1,888 |
 
-Price error is the mean absolute gap between each trade price and the underlying value at
-that step. The asset is worth about $100.
+Trade price error is the mean absolute gap between each trade price and the underlying
+value at that step. Mid-quote error is the same gap for the midpoint of the best bid and
+offer, taken on every step, so it does not depend on which trades happen. The asset is
+worth about $100.
 
 | Better-informed share | Trading gain per better-informed trader | Trading gain per other trader |
 | ---: | --- | --- |
@@ -51,44 +55,77 @@ with stock marked at the final underlying value. Gains sum to zero across trader
 
 What the pilot shows, in this model:
 
-- **Prices get more accurate as more traders are well informed, up to a point.** Price
-  error falls from $0.44 to $0.25 at 50%, then rises to $0.29 at 75%.
-- **The rise at 75% comes from news.** With many well-informed traders, a growing share of
-  the remaining trades are against quotes that news has just made stale, and those trades
-  happen far from the new value. A side check with news switched off (8 seeds, not part of
-  the saved experiment) gave a steadily falling error: $0.41, $0.34, $0.24, $0.14, $0.10.
+- **Quotes get more accurate all the way.** Mid-quote error falls from $0.44 to $0.15.
+- **Trade prices stop improving after 50%, because of which trades happen.** Trades between
+  two better-informed traders occur about $0.45 from the value at every share. Under the
+  rules two such traders almost never disagree enough to trade unless news has left one
+  of their quotes stale. These trades are under 2% of all trades up to a 25% share, about
+  10% at 50% and a third at 75%, which pulls the average error back up.
 - **Quoted spreads narrow and volume falls.** Fewer trades come from traders disagreeing
   about value by mistake.
 - **Better-informed traders gain at the others' expense, and the gain per trader shrinks as
   their group grows:** $45 each when they are 10% of the market, $3 each at 75%.
 - **Sensitivity check.** With a narrower gap in signal precision ($0.50 against $1.00
-  instead of $0.10 against $1.00) every effect has the same sign and is smaller, and price
-  error falls all the way to 75% ($0.44 to $0.27).
+  instead of $0.10 against $1.00) every effect in the table has the same sign and is
+  smaller, and trade price error falls all the way to 75% ($0.44 to $0.27).
 - **Control.** With equal precision in both groups, relabelling who counts as "better
   informed" produced identical event logs in all 25 control runs.
 
-Read these as properties of this model. The intervals measure variation across seeds
-under one configuration; they say nothing about whether the assumptions below are right.
+### How fast prices take in news
+
+![Share of a value change reflected in the mid-quote, by steps since the news](results/informed_share/news_response.png)
+
+For each isolated news event (no other news within 40 steps either side) the experiment
+tracks how much of the value change the mid-quote has taken in. The half-life is the
+number of steps until half is reflected.
+
+| Better-informed share | Half-life, orders rest 80 steps (main) | Change from 0% [95% interval] | Half-life, orders rest 20 steps | Change from 0% [95% interval] |
+| ---: | ---: | --- | ---: | --- |
+| 0% | 9.1 steps | | 6.2 steps | |
+| 10% | 9.6 | +0.2 [−2.2, +2.7] | 5.3 | −1.0 [−2.6, +0.6] |
+| 25% | 12.4 | +3.1 [−0.2, +6.4] | 5.3 | −1.0 [−2.6, +0.6] |
+| 50% | 15.9 | +6.8 [+3.7, +9.9] | 8.1 | +1.9 [+0.1, +3.7] |
+| 75% | 18.2 | +9.0 [+5.8, +12.2] | 8.6 | +2.4 [+0.2, +4.6] |
+
+- **In the main configuration, more better-informed traders means news reaches quotes more
+  slowly at first.** The half-life roughly doubles between 0% and 75%. After 40 steps
+  83% to 91% of the news is reflected at every share.
+- **The likely cause is stale quotes.** In this model a resting order changes only when its
+  owner next arrives or it expires. Better-informed traders' old quotes sit close together
+  at the old value and hold the mid-quote there until they are taken or removed. When
+  orders expire after 20 steps instead of 80, every market adjusts faster and most of
+  the slowdown goes away.
+- **These estimates are much noisier than the table above.** A run has about 14 isolated
+  news events, the intervals are wide, and at 10% and 25% no difference is detectable.
+
+Read all of this as properties of this model. The intervals measure variation across
+seeds under one configuration; they say nothing about whether the assumptions below are
+right.
 
 ## Run it
 
-Requires Python 3.12 or newer with numpy, pandas, scipy and matplotlib, plus pytest for the
-checks. Commands below were run with Python 3.13.18, numpy 2.5.3, pandas 3.0.5,
-scipy 1.18.1, matplotlib 3.11.2 and pytest 9.1.1. `pip install -e ".[dev]"` should install
-everything but has not yet been tried on a clean machine.
+Requires Python 3.12 or newer.
 
 ```
-python -m pytest                    # all checks (80 tests, about 6 seconds)
+python -m pip install -e ".[dev]"   # numpy, pandas, scipy, matplotlib and pytest
+python -m pytest                    # all checks (89 tests, about 8 seconds)
 python -m marketsim.dashboard       # the demo, at http://127.0.0.1:8000
 python -m marketsim.example         # the first hand-worked case, step by step
 python -m marketsim.run --seed 1 --informed-share 0.25 --trace-step 1
 python -m marketsim.run --seed 1 --informed-share 0.25 --save results/scratch/run1
-python -m marketsim.experiment      # regenerates results/informed_share (about 25 seconds)
+python -m marketsim.experiment      # regenerates results/informed_share (about 35 seconds)
+python -m marketsim.experiment --check   # regenerates and compares with the saved results
 python -m marketsim.benchmark       # times a fixed workload
 ```
 
-`marketsim.experiment` rewrites the tables and both charts in `results/informed_share/`.
-The CSV and JSON files come out byte-for-byte the same on the same library versions.
+`marketsim.experiment` rewrites the tables and charts in `results/informed_share/`. The
+saved results were made with Python 3.13 and the library versions in
+`requirements-tested.txt`.
+
+On every push GitHub installs the project on a clean machine, runs the tests and the
+worked example, and runs the `--check` command. It does this on Python 3.12 and 3.13 with
+the newest libraries and once more with the exact tested versions
+(`.github/workflows/tests.yml`).
 
 ## The dashboard
 
@@ -117,7 +154,7 @@ three on Python 3.13.18, numpy 2.5.3, x86-64 Linux in the build container:
 | Invariant checks off | 0.28 s | about 70,000 |
 | Invariant checks on after every operation | 1.88 s | about 10,600 |
 
-The whole 325-run experiment takes about 25 seconds, so nothing has been optimized.
+The whole 475-run experiment takes about 35 seconds, so nothing has been optimized.
 
 ## How the market works
 
@@ -164,6 +201,9 @@ The buyer ends with $30.00 and two shares, the seller with $20.00 and three shar
   opposite needs mostly do not trade with each other.
 - **Nobody takes a position beyond its inventory target,** so better-informed traders
   profit by trading on better terms, not by speculating without limit.
+- **Resting orders are never refreshed.** A quote changes only when its owner next arrives
+  or it expires, so even a well-informed trader leaves a stale quote in the book after
+  news. The news-speed result above depends on this.
 - **Depth at the best quote is almost always one order** (about three shares) with a
   one-cent tick and 40 traders, so that measure says little here.
 - The configuration in `marketsim/config.py` is a pilot and none of its numbers has been
@@ -183,6 +223,7 @@ The buyer ends with $30.00 and two shares, the seller with $20.00 and three shar
 | `marketsim/traders.py` | What a trader can see and the decision rule |
 | `marketsim/simulation.py` | The one runner used by the command line, the experiment and the dashboard |
 | `marketsim/metrics.py` | Per-run measures |
+| `marketsim/news.py` | The news event study: how much of a value change prices reflect, step by step |
 | `marketsim/experiment.py`, `charts.py` | The paired informed-share experiment and its charts |
 | `marketsim/run.py`, `storage.py` | Run one market, trace a decision, export a run |
 | `marketsim/dashboard.py`, `dashboard.html` | The local demo: a small server and one page |

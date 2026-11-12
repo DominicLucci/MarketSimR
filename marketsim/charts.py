@@ -133,3 +133,46 @@ def outcomes_chart(runs: pd.DataFrame, levels: pd.DataFrame, path: str | Path) -
     fig.tight_layout()
     fig.savefig(path, dpi=160, facecolor=SURFACE)
     plt.close(fig)
+
+
+# Informed share is an ordered quantity, so it gets one hue from light to dark.
+SHARE_RAMP = ((0.0, "#86b6ef"), (0.10, "#5598e7"), (0.25, "#2a78d6"), (0.50, "#1c5cab"), (0.75, "#0d366b"))
+
+
+def news_chart(news: pd.DataFrame, n_seeds: int, path: str | Path) -> None:
+    """Share of a value change reflected in the mid-quote, by steps since the news.
+    Left: main variant. Right: the same markets with short-lived orders."""
+    panels = (("main", "Orders rest up to 80 steps (main)"), ("short_lived_orders", "Orders rest up to 20 steps"))
+    fig, axes = plt.subplots(1, 2, figsize=(12.5, 5.0), facecolor=SURFACE, sharey=True)
+    for ax, (variant, title) in zip(axes, panels):
+        ax.set_facecolor(SURFACE)
+        for side in ("top", "right", "left"):
+            ax.spines[side].set_visible(False)
+        ax.spines["bottom"].set_color(AXIS)
+        ax.grid(axis="y", color=GRID, linewidth=0.8)
+        ax.set_axisbelow(True)
+        ax.tick_params(colors=TEXT_MUTED, labelsize=9, length=0)
+        ax.axhline(1.0, color=AXIS, linewidth=1)
+        rows = news[(news["variant"] == variant) & (news["series"] == "in_mid")]
+        for share, color in SHARE_RAMP:
+            line = rows[(rows["informed_share"] - share).abs() < 1e-9].sort_values("steps_after_news")
+            ax.plot(line["steps_after_news"], line["mean"], color=color, linewidth=2, solid_capstyle="round",
+                    label=f"{share:.0%} better informed")
+        ax.set_xlim(0, 40.5)
+        ax.set_xticks([0, 10, 20, 30, 40])
+        ax.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
+        ax.yaxis.set_major_formatter(lambda value, _: f"{value:.0%}")
+        ax.set_xlabel("steps since the news", color=TEXT_SECONDARY, fontsize=9)
+        _titles(ax, title, "share of the value change reflected in the mid-quote")
+    axes[0].text(40, 1.015, "all of the news", color=TEXT_MUTED, fontsize=9, ha="right", va="bottom")
+    axes[1].legend(frameon=False, fontsize=9, labelcolor=TEXT_SECONDARY, loc="lower right", handlelength=1.6)
+    fig.suptitle("How fast quotes take in news", x=0.012, y=0.985, ha="left", color=TEXT, fontsize=14, fontweight="bold")
+    fig.text(
+        0.012, 0.925,
+        f"Mean over {n_seeds} seeds of each run's response to isolated news events "
+        "(no other news within 40 steps before or after).",
+        color=TEXT_SECONDARY, fontsize=10, va="top",
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.965), w_pad=2.0)
+    fig.savefig(path, dpi=160, facecolor=SURFACE)
+    plt.close(fig)

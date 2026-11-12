@@ -35,7 +35,10 @@ def save_run(result: RunResult, directory: str | Path) -> Path:
     _write_csv(out / "traders.csv", trader_outcomes(result))
     _write_csv(
         out / "value_path.csv",
-        [{"time": t, "value": float(v)} for t, v in enumerate(result.value_path)],
+        [
+            {"time": t, "value": float(v), "mid": None if np.isnan(m) else float(m)}
+            for t, (v, m) in enumerate(zip(result.value_path, result.mid_path))
+        ],
     )
     _write_csv(
         out / "quotes.csv",

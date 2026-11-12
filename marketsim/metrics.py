@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 
 from .events import OrderAccepted, OrderExpired, OrderRejected, Trade
+from .news import HORIZONS, half_life, last_trade_path, response_curve
 from .simulation import RunResult
 
 
@@ -52,6 +53,26 @@ def summarize(result: RunResult) -> dict[str, Any]:
     no_bid = sum(1 for s in samples if s[1] is None)
     no_ask = sum(1 for s in samples if s[3] is None)
 
+    # Mid-quote error on every step: unlike the trade-based error it does not depend on
+    # which trades happen to occur.
+    mid = result.mid_path
+    quoted = ~np.isnan(mid)
+    mid_errors = np.abs(mid[quoted] - result.value_path[quoted])
+
+    # Trade error by who was on the two sides: both better informed, one of each, neither.
+    by_pair: dict[str, list[float]] = {"both": [], "mixed": [], "neither": []}
+    for trade, error in zip(trades, errors):
+        informed_sides = (trade.buyer_id in result.informed) + (trade.seller_id in result.informed)
+        by_pair[("neither", "mixed", "both")[informed_sides]].append(error)
+
+    # News event study: share of each value change reflected k steps later.
+    in_mid = response_curve(result.value_path, mid)
+    in_trades = response_curve(result.value_path, last_trade_path(result.events, config.n_steps))
+
+    def at(curve: dict[str, Any], horizon: int) -> float | None:
+        value = curve["reflected"][horizon]
+        return None if np.isnan(value) else float(value)
+
     outcomes = trader_outcomes(result)
     by_group = {
         True: [o for o in outcomes if o["informed"]],
@@ -73,6 +94,20 @@ def summarize(result: RunResult) -> dict[str, Any]:
         "volume": sum(t.quantity for t in trades),
         # price accuracy: mean absolute gap between trade price and value at that trade
         "price_error": _mean(errors),
+        "price_error_both_informed": _mean(by_pair["both"]),
+        "price_error_mixed": _mean(by_pair["mixed"]),
+        "price_error_neither_informed": _mean(by_pair["neither"]),
+        "n_trades_both_informed": len(by_pair["both"]),
+        "n_trades_mixed": len(by_pair["mixed"]),
+        "n_trades_neither_informed": len(by_pair["neither"]),
+        # mean absolute gap between the mid-quote and value, over every step with two-sided quotes
+        "mid_error": float(mid_errors.mean()) if len(mid_errors) else None,
+        "share_steps_quoted": float(quoted.mean()),
+        # news: share of a value change reflected k steps later (ratio of sums over isolated events)
+        "news_events": in_mid["n_events"],
+        **{f"news_in_mid_{h}": at(in_mid, h) for h in HORIZONS},
+        **{f"news_in_trades_{h}": at(in_trades, h) for h in HORIZONS},
+        "news_half_life_mid": half_life(in_mid["reflected"]) if in_mid["n_events"] else None,
         # liquidity, from quotes sampled every quote_sample_every steps
         "n_quote_samples": len(samples),
         "share_no_bid": no_bid / len(samples),
