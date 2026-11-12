@@ -146,9 +146,15 @@ def news_chart(news: pd.DataFrame, n_seeds: int, path: str | Path, subtitle: str
         "main": "Orders rest up to 80 steps (main)",
         "short_lived_orders": "Orders rest up to 20 steps",
         "pull_on_news": "Quotes pulled when news arrives",
+        "learn_from_prices": "Traders learn from prices",
     }
     panels = [(variant, title) for variant, title in titles.items() if variant in set(news["variant"])]
-    fig, axes = plt.subplots(1, len(panels), figsize=(6.25 * len(panels), 5.0), facecolor=SURFACE, sharey=True)
+    if "pull_on_news" not in set(news["variant"]):  # the main experiment keeps its two-panel chart
+        panels = panels[:2]
+    columns = 2 if len(panels) in (2, 4) else len(panels)
+    n_rows = -(-len(panels) // columns)
+    fig, grid = plt.subplots(n_rows, columns, figsize=(6.25 * columns, 4.6 * n_rows + 0.4), facecolor=SURFACE, sharey=True, squeeze=False)
+    axes = list(grid.flat)
     for ax, (variant, title) in zip(axes, panels):
         ax.set_facecolor(SURFACE)
         for side in ("top", "right", "left"):
@@ -170,15 +176,17 @@ def news_chart(news: pd.DataFrame, n_seeds: int, path: str | Path, subtitle: str
         ax.set_xlabel("steps since the news", color=TEXT_SECONDARY, fontsize=9)
         _titles(ax, title, "share of the value change reflected in the mid-quote")
     axes[0].text(40, 1.015, "all of the news", color=TEXT_MUTED, fontsize=9, ha="right", va="bottom")
-    axes[-1].legend(frameon=False, fontsize=9, labelcolor=TEXT_SECONDARY, loc="lower right", handlelength=1.6)
+    legend_at = "lower right" if n_rows == 1 else "upper left"  # wherever the last panel has no lines
+    axes[-1].legend(frameon=False, fontsize=9, labelcolor=TEXT_SECONDARY, loc=legend_at, handlelength=1.6)
     fig.suptitle("How fast quotes take in news", x=0.012, y=0.985, ha="left", color=TEXT, fontsize=14, fontweight="bold")
     fig.text(
-        0.012, 0.925,
+        0.012, 0.925 if n_rows == 1 else 0.955,
         subtitle
         or f"Mean over {n_seeds} seeds of each run's response to isolated news events "
         "(no other news within 40 steps before or after).",
         color=TEXT_SECONDARY, fontsize=10, va="top",
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.965), w_pad=2.0)
+    top = 0.965 if n_rows == 1 else 0.915
+    fig.tight_layout(rect=(0, 0, 1, top), w_pad=2.0, h_pad=2.0)
     fig.savefig(path, dpi=160, facecolor=SURFACE)
     plt.close(fig)

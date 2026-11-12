@@ -22,6 +22,7 @@ def view(signal=10_012.3, target=12, shares=10, cash=100_000, available_cash=Non
     return TraderView(
         time=0,
         signal=signal,
+        signal_sd=100.0,
         target_shares=target,
         cash=cash,
         shares=shares,
@@ -59,6 +60,7 @@ def test_trader_view_cannot_carry_the_underlying_value():
     assert {f.name for f in fields(TraderView)} == {
         "time",
         "signal",
+        "signal_sd",
         "target_shares",
         "cash",
         "shares",
@@ -211,3 +213,48 @@ def test_config_rejects_shares_that_split_a_trader():
         SimConfig(n_traders=40, informed_share=0.33)
     with pytest.raises(ValueError):
         SimConfig.from_dict({"sede": 1})
+
+
+# ------------------------------------------------------------ learning from prices
+
+
+def view_with_quotes(signal, signal_sd, bid, ask, target=12, shares=10):
+    return TraderView(
+        time=0, signal=signal, signal_sd=signal_sd, target_shares=target, cash=1_000_000, shares=shares,
+        available_cash=1_000_000, available_shares=shares, quotes=Quotes(bid, 1 if bid else 0, ask, 1 if ask else 0),
+    )
+
+
+def test_estimate_leans_on_the_price_in_proportion_to_the_traders_own_noise():
+    from marketsim.traders import estimate_value
+
+    # Signal 10,000, mid-quote 10,100. Equal noise in signal and price: halfway, 10,050.
+    even = view_with_quotes(10_000.0, 100.0, 10_090, 10_110)
+    assert estimate_value(even, price_sd=100.0) == pytest.approx(10_050.0)
+    # A precise signal (sd 10 against price sd 30) moves a tenth of the way: 10,010.
+    precise = view_with_quotes(10_000.0, 10.0, 10_090, 10_110)
+    assert estimate_value(precise, price_sd=30.0) == pytest.approx(10_010.0)
+    # Prices ignored when learning is off, and when there is no two-sided quote to learn from.
+    assert estimate_value(even) == 10_000.0
+    assert estimate_value(view_with_quotes(10_000.0, 100.0, None, 10_110), price_sd=100.0) == 10_000.0
+
+
+def test_learning_changes_the_limit_price_through_the_estimate():
+    buyer = view_with_quotes(10_000.0, 100.0, 10_090, 10_110)
+    assert decide(buyer, margin=20, max_order_size=5)[0].price == 9_980
+    assert decide(buyer, margin=20, max_order_size=5, price_sd=100.0)[0].price == 10_030  # 10,050 - 20
+
+
+def test_learning_option_keeps_the_controls_intact():
+    learning = SMALL.with_(learn_from_prices=True)
+    first = run_simulation(learning, check_invariants=True)
+    assert first.events != run_simulation(SMALL).events  # the option does something
+    assert first.events == run_simulation(learning).events  # and replays exactly
+    assert any(d["estimate"] != d["signal"] for d in first.decisions)
+    # Equal information: the group label is still inert.
+    equal = learning.with_(sigma_informed=60.0, sigma_uninformed=60.0)
+    assert run_simulation(equal.with_(informed_share=0.0)).events == run_simulation(equal.with_(informed_share=0.75)).events
+    # Orders still cannot depend on future values.
+    altered = first.value_path.copy()
+    altered[300:] *= 1.5
+    assert [e for e in first.events if e.time < 300] == [e for e in run_simulation(learning, value_override=altered).events if e.time < 300]

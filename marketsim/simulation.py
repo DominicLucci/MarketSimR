@@ -15,7 +15,7 @@ import numpy as np
 from .config import MODEL_VERSION, SimConfig
 from .events import Event, Side
 from .exchange import Exchange
-from .traders import TraderView, decide
+from .traders import TraderView, decide, estimate_value
 from .world import arrival_schedule, informed_traders, trader_luck, value_path
 
 
@@ -79,6 +79,7 @@ def run_simulation(
         view = TraderView(
             time=time,
             signal=value + sigma * z,
+            signal_sd=sigma,
             target_shares=config.initial_shares + need,
             cash=account.cash,
             shares=account.shares,
@@ -86,7 +87,8 @@ def run_simulation(
             available_shares=account.available_shares,
             quotes=exchange.quotes(),
         )
-        intent, reason = decide(view, config.margin, config.max_order_size)
+        price_sd = config.price_sd if config.learn_from_prices else None
+        intent, reason = decide(view, config.margin, config.max_order_size, price_sd)
         order_id = None
         if intent is not None:
             order_id = exchange.submit_limit(
@@ -102,6 +104,7 @@ def run_simulation(
                 "trader": trader_id,
                 "informed": is_informed,
                 "signal": view.signal,
+                "estimate": estimate_value(view, price_sd),
                 "shares": view.shares,
                 "target": view.target_shares,
                 "best_bid": view.quotes.best_bid,

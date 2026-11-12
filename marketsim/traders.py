@@ -10,7 +10,9 @@ Baseline rule (provisional, see docs/model_rules.md section 7):
   can fund.
 * The signal sets the price. A buyer bids its signal minus the margin, rounded down. A
   seller offers its signal plus the margin, rounded up.
-* Traders in this baseline do not use the public quotes to revise their estimate.
+* Traders in this baseline do not use the public quotes to revise their estimate. With
+  the learn_from_prices option they replace the signal by a weighted average of the
+  signal and the mid-quote, leaning on the price more when their own signal is noisier.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ class TraderView:
 
     time: int
     signal: float  # private estimate of the value, in ticks
+    signal_sd: float  # how noisy this trader knows its own signal to be, in ticks
     target_shares: int  # this arrival's inventory target (private)
     cash: int
     shares: int
@@ -43,14 +46,26 @@ class Intent:
     quantity: int
 
 
-def decide(view: TraderView, margin: float, max_order_size: int) -> tuple[Intent | None, str]:
+def estimate_value(view: TraderView, price_sd: float | None = None) -> float:
+    """The trader's estimate of the value. `price_sd` None means prices are ignored."""
+    mid = view.quotes.mid
+    if price_sd is None or mid is None:
+        return view.signal
+    weight_on_price = view.signal_sd**2 / (view.signal_sd**2 + price_sd**2)
+    return (1 - weight_on_price) * view.signal + weight_on_price * mid
+
+
+def decide(
+    view: TraderView, margin: float, max_order_size: int, price_sd: float | None = None
+) -> tuple[Intent | None, str]:
     """Return the order to send (or None) and a short reason, for the decision trace."""
+    estimate = estimate_value(view, price_sd)
     gap = view.target_shares - view.shares
     if gap == 0:
         return None, "at target"
 
     if gap > 0:
-        price = floor(view.signal - margin)
+        price = floor(estimate - margin)
         if price < 1:
             return None, "bid would be below one tick"
         quantity = min(gap, max_order_size, view.available_cash // price)
@@ -58,7 +73,7 @@ def decide(view: TraderView, margin: float, max_order_size: int) -> tuple[Intent
             return None, "cannot afford one share at its bid"
         return Intent(Side.BUY, price, quantity), "below target"
 
-    price = max(1, ceil(view.signal + margin))
+    price = max(1, ceil(estimate + margin))
     quantity = min(-gap, max_order_size, view.available_shares)
     if quantity < 1:
         return None, "no shares available to sell"

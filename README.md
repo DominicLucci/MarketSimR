@@ -134,6 +134,36 @@ taken in. The half-life is the number of steps until half is reflected.
   events per run and finds the same pattern with wider intervals (half-life +9.0 steps at
   75%, interval +5.8 to +12.2; chart in `results/informed_share/news_response.png`).
 
+### When traders learn from prices
+
+In the baseline a trader ignores what quotes imply. With `learn_from_prices` on, its
+estimate is a weighted average of its own signal and the mid-quote it sees, with more
+weight on the price the noisier its own signal is. Traders believe the mid-quote is
+typically $0.30 from the value. A less-informed trader then puts about 92% of the weight
+on the price and a better-informed one about 10%.
+
+| Better-informed share | Mid-quote error, baseline | With learning | Volume, baseline | With learning | News reflected after 40 steps, baseline | With learning |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0% | $0.44 | $0.78 | 3,543 | 206 | 87% | 9% |
+| 10% | $0.36 | $0.70 | 3,461 | 317 | 92% | 13% |
+| 25% | $0.26 | $0.59 | 3,248 | 494 | 92% | 19% |
+| 50% | $0.17 | $0.32 | 2,616 | 863 | 92% | 42% |
+| 75% | $0.15 | $0.21 | 1,888 | 1,016 | 92% | 65% |
+
+Mid-quote error and volume come from the main experiment; the news column comes from the
+scheduled-news experiment.
+
+- **Prices anchor on themselves.** When most traders copy the price, the price mostly
+  follows its own past. Quotes are tight ($0.11 to $0.14 spread) but less accurate than in
+  the baseline at every share, and trading nearly stops when nobody is well informed.
+- **Better-informed traders now speed news up.** After 40 steps the mid-quote reflects 9%
+  of a value change with no better-informed traders and 65% at a 75% share (difference
+  +55 points, 95% interval +54 to +57). In the baseline the early effect ran the other way.
+- **This is one fixed level of trust, and it is too high at low shares.** Traders assume
+  the price is within about $0.30 of the value when it is actually $0.59 to $0.78 away at
+  shares up to 25%. Much of the damage comes from that mismatch. A version where trust
+  matches how accurate prices really are at each share has not been built.
+
 Read all of this as properties of this model. The intervals measure variation across
 seeds under one configuration; they say nothing about whether the assumptions below are
 right.
@@ -144,12 +174,12 @@ Requires Python 3.12 or newer.
 
 ```
 python -m pip install -e ".[dev]"   # numpy, pandas, scipy, matplotlib and pytest
-python -m pytest                    # all checks (95 tests, about 10 seconds)
+python -m pytest                    # all checks (98 tests, about 11 seconds)
 python -m marketsim.dashboard       # the demo, at http://127.0.0.1:8000
 python -m marketsim.example         # the first hand-worked case, step by step
 python -m marketsim.run --seed 1 --informed-share 0.25 --trace-step 1
 python -m marketsim.run --seed 1 --informed-share 0.25 --save results/scratch/run1
-python -m marketsim.experiment      # regenerates results/informed_share (about 35 seconds)
+python -m marketsim.experiment      # regenerates results/informed_share (about 50 seconds)
 python -m marketsim.experiment --design scheduled_news   # regenerates results/scheduled_news
 python -m marketsim.experiment --check   # regenerates and compares with the saved results
 python -m marketsim.experiment --check --out results/scheduled_news
@@ -192,7 +222,7 @@ three on Python 3.13.18, numpy 2.5.3, x86-64 Linux in the build container:
 | Invariant checks off | 0.28 s | about 70,000 |
 | Invariant checks on after every operation | 1.88 s | about 10,600 |
 
-The whole 475-run experiment takes about 35 seconds, so nothing has been optimized.
+The whole 625-run main experiment takes about 50 seconds, so nothing has been optimized.
 
 ## How the market works
 
@@ -232,9 +262,10 @@ The buyer ends with $30.00 and two shares, the seller with $20.00 and three shar
 
 ## Assumptions that limit interpretation
 
-- **Traders do not learn from prices.** Less-informed traders act on their own noisy
-  signal and ignore what the quotes imply, so they lose on average and keep trading. The
-  model cannot show them protecting themselves by quoting wider or staying out.
+- **Traders do not learn from prices in the baseline.** Less-informed traders act on their
+  own noisy signal and ignore what the quotes imply, so they lose on average and keep
+  trading. The `learn_from_prices` option lets them lean on the mid-quote with a fixed
+  level of trust; it changes the results sharply (see above).
 - **Inventory need decides side and size, never price.** Equally informed traders with
   opposite needs mostly do not trade with each other.
 - **Nobody takes a position beyond its inventory target,** so better-informed traders

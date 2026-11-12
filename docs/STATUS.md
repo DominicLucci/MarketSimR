@@ -3,7 +3,7 @@
 Updated at the end of each build session so the next session has a verifiable place to
 pick up.
 
-## Where things stand (after session 4, 2026-11-12)
+## Where things stand (after session 5, 2026-11-12)
 
 | Handoff week | What exists | State |
 | --- | --- | --- |
@@ -14,6 +14,35 @@ pick up.
 | 6 | Benchmark, README, automatic checks on a clean machine | Done; README numbers are pilot numbers |
 
 `main` holds everything. GitHub runs the checks on every push.
+
+## Session 5 (2026-11-12)
+
+### Built
+
+- **Learning-from-prices option** (`learn_from_prices`, `price_sd` in `marketsim/config.py`;
+  `estimate_value` in `marketsim/traders.py`). Off by default. A trader's estimate is a
+  precision-weighted average of its signal and the mid-quote it sees.
+- Added as a variant, `learn_from_prices`, of both experiments (main: 600 grid runs;
+  scheduled news: 600 runs).
+
+### Checks run
+
+- `python -m pytest`: 98 passed. Both `--check` commands pass.
+- Estimate checked on hand-worked numbers; with learning on, the run still replays
+  exactly, the equal-information relabelling is still inert and orders still do not
+  depend on future values.
+- Earlier runs of the main experiment are unchanged.
+- Four-panel news chart rendered and looked at; an overlapping subtitle and legend fixed.
+
+### What changed in the findings
+
+- With learning at a fixed trust of $0.30, prices anchor on themselves: quotes are tight
+  but less accurate than the baseline at every share, and volume collapses at low shares.
+- The direction of the news result reverses: better-informed traders now speed news up
+  (after 40 steps: 9% reflected at 0%, 65% at 75%).
+- **Caveat that matters:** the trust is fixed and too high at low informed shares (assumed
+  $0.30, actual mid-quote error $0.59 to $0.78). The size of these effects depends on
+  that mismatch.
 
 ## Session 4 (2026-11-12)
 
@@ -153,7 +182,9 @@ Tooling:
 
 1. Dominic reviews the four behavioural assumptions in `docs/model_rules.md` section 8.
    The newest one, that resting orders are never refreshed, now visibly drives a result.
-2. Learning from prices as a switch, then rerun the experiments with it on and off.
+2. Calibrated trust: choose `price_sd` at each informed share so it equals the mid-quote
+   error the market then produces (iterate to a fixed point). This is the self-consistent
+   version of learning from prices.
 3. Depth within a few ticks of the mid-quote, and a price-impact measure net of the
    mechanical effect of removing the best quote.
 4. Show the new measures in the dashboard.

@@ -61,6 +61,8 @@ def trace_text(result: RunResult, step: int) -> str:
         f"holds {d['shares']} shares, target {d['target']}, "
         f"best bid {_money(d['best_bid'])}, best offer {_money(d['best_ask'])}",
     ]
+    if d["estimate"] != d["signal"]:
+        lines.append(f"  blends its signal with the mid-quote: estimate {dollars(d['estimate'])}")
     if d["side"] is None:
         lines.append(f"  decides: no order ({d['reason']})")
         return "\n".join(lines)
@@ -68,7 +70,7 @@ def trace_text(result: RunResult, step: int) -> str:
     direction = "minus" if d["side"] == "buy" else "plus"
     rounding = "down" if d["side"] == "buy" else "up"
     lines.append(
-        f"  decides: {d['reason']} by {abs(gap)}, so {d['side']} {d['quantity']} at signal {direction} "
+        f"  decides: {d['reason']} by {abs(gap)}, so {d['side']} {d['quantity']} at estimate {direction} "
         f"margin {dollars(config.margin)}, rounded {rounding} = {dollars(d['price'])}"
     )
     if d["order_id"] is None:

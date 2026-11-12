@@ -44,6 +44,7 @@ VARIANTS: dict[str, dict[str, Any]] = {
     "main": {},
     "narrow_gap": {"sigma_informed": 50.0},
     "short_lived_orders": {"order_lifetime": 20},
+    "learn_from_prices": {"learn_from_prices": True},
 }
 # Measures that exist at every share, compared with the 0% baseline within a seed.
 MARKET_MEASURES = (
@@ -78,6 +79,7 @@ DESIGNS: dict[str, dict[str, Any]] = {
             "main": {},
             "short_lived_orders": {"order_lifetime": 20},
             "pull_on_news": {"cancel_on_news": True},
+            "learn_from_prices": {"learn_from_prices": True},
         },
     },
 }

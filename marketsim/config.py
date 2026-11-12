@@ -41,6 +41,13 @@ class SimConfig:
 
     # Decision rule.
     margin: float = 20.0  # ticks kept between a trader's estimate and its limit price
+    # Learning from prices (off in the baseline). When on, a trader's estimate of the value
+    # is a weighted average of its own signal and the mid-quote it sees. The weight on the
+    # mid-quote is signal_sd^2 / (signal_sd^2 + price_sd^2): the noisier a trader's own
+    # signal, the more it leans on the price. price_sd is how far off traders believe the
+    # mid-quote typically is, in ticks.
+    learn_from_prices: bool = False
+    price_sd: float = 30.0
     max_need: int = 5  # inventory target = initial_shares + need, need in [-max_need, max_need]
     max_order_size: int = 5
     order_lifetime: int = 80  # steps before a resting order expires
@@ -61,6 +68,8 @@ class SimConfig:
             )
         if min(self.sigma_informed, self.sigma_uninformed, self.margin, self.news_sigma) < 0:
             raise ValueError("standard deviations and margin cannot be negative")
+        if self.price_sd <= 0:
+            raise ValueError("price_sd must be positive")
         if not 0.0 <= self.news_prob <= 1.0:
             raise ValueError("news_prob must be between 0 and 1")
         if type(self.news_every) is not int or self.news_every < 0:

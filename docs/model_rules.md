@@ -108,7 +108,12 @@ decision from its inputs to its fills.
 
 ### What this baseline assumes, and what that limits
 
-- **Traders do not learn from prices.** A less-informed trader treats its own noisy
+- **Traders do not learn from prices.** (Option: `learn_from_prices = True` replaces the
+  signal by `(1 - w) x signal + w x mid-quote` with `w = signal_sd^2 / (signal_sd^2 +
+  price_sd^2)`, where `price_sd`, $0.30 by default, is how far off traders believe the
+  mid-quote typically is. With no two-sided quote the signal is used alone. The trust is
+  fixed and is not matched to how accurate prices actually are.) In the baseline a
+  less-informed trader treats its own noisy
   signal as its estimate and ignores what the quotes imply. Every trade is zero-sum on a
   common value, so the less-informed group loses on average and keeps trading anyway. This
   makes the mechanism easy to trace, and it means the model cannot show less-informed
