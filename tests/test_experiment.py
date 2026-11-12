@@ -80,3 +80,17 @@ def test_check_passes_on_untouched_results_and_catches_a_changed_number(tmp_path
     runs.to_csv(saved / "runs.csv", index=False)
     problems = check_results(saved)
     assert len(problems) == 1 and problems[0].startswith("runs.csv")
+
+
+def test_scheduled_news_design_runs_and_verifies(tmp_path):
+    from marketsim.experiment import DESIGNS
+
+    base = SimConfig(n_steps=600, **DESIGNS["scheduled_news"]["base"])
+    out = run_experiment(base, 2, tmp_path / "news", chart=True, design="scheduled_news")
+    assert (out / "news_response.png").exists() and not (out / "market_measures.png").exists()
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["design"] == "scheduled_news" and manifest["base_config"]["news_every"] == 100
+    assert set(manifest["variants"]) == {"main", "short_lived_orders"}
+    runs = pd.read_csv(out / "runs.csv")
+    assert len(runs) == 2 * 2 * len(SHARES) and runs["news_events"].max() == 5  # news at 100..500
+    assert check_results(out) == []

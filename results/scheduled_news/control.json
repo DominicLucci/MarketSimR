@@ -1,0 +1,20 @@
+{
+  "description": "both groups get sigma_uninformed; event logs compared across informed shares",
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "shares": [
+    0.0,
+    0.1,
+    0.25,
+    0.5,
+    0.75
+  ],
+  "runs": 25,
+  "identical_within_every_seed": true,
+  "seeds_with_differences": []
+}

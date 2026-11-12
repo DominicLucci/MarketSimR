@@ -95,3 +95,20 @@ def test_run_summary_reports_the_new_measures():
 
     quiet = summarize(run_simulation(SimConfig(seed=0, news_prob=0.0, n_steps=500)))
     assert quiet["news_events"] == 0 and quiet["news_in_mid_10"] is None and quiet["news_half_life_mid"] is None
+
+
+def test_scheduled_news_arrives_on_time_with_a_fixed_size_and_random_direction():
+    from marketsim.world import value_path
+
+    config = SimConfig(seed=5, n_steps=1000, news_every=100)
+    path = value_path(config)
+    assert news_steps(path).tolist() == list(range(100, 1000, 100))
+    log_jumps = np.log(path[news_steps(path)] / path[news_steps(path) - 1])
+    assert np.abs(log_jumps) == pytest.approx(config.news_sigma)
+    assert {1.0, -1.0} == set(np.sign(log_jumps))  # both directions occur for this seed
+    assert isolated_events(path) == list(range(100, 1000, 100))  # every event is usable
+    # The schedule ignores news_prob, and a longer run extends the same history.
+    assert np.array_equal(value_path(config.with_(news_prob=0.9)), path)
+    assert np.array_equal(value_path(config.with_(n_steps=1500))[:1000], path)
+    with pytest.raises(ValueError):
+        SimConfig(news_every=-1)

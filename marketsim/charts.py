@@ -139,7 +139,7 @@ def outcomes_chart(runs: pd.DataFrame, levels: pd.DataFrame, path: str | Path) -
 SHARE_RAMP = ((0.0, "#86b6ef"), (0.10, "#5598e7"), (0.25, "#2a78d6"), (0.50, "#1c5cab"), (0.75, "#0d366b"))
 
 
-def news_chart(news: pd.DataFrame, n_seeds: int, path: str | Path) -> None:
+def news_chart(news: pd.DataFrame, n_seeds: int, path: str | Path, subtitle: str | None = None) -> None:
     """Share of a value change reflected in the mid-quote, by steps since the news.
     Left: main variant. Right: the same markets with short-lived orders."""
     panels = (("main", "Orders rest up to 80 steps (main)"), ("short_lived_orders", "Orders rest up to 20 steps"))
@@ -169,7 +169,8 @@ def news_chart(news: pd.DataFrame, n_seeds: int, path: str | Path) -> None:
     fig.suptitle("How fast quotes take in news", x=0.012, y=0.985, ha="left", color=TEXT, fontsize=14, fontweight="bold")
     fig.text(
         0.012, 0.925,
-        f"Mean over {n_seeds} seeds of each run's response to isolated news events "
+        subtitle
+        or f"Mean over {n_seeds} seeds of each run's response to isolated news events "
         "(no other news within 40 steps before or after).",
         color=TEXT_SECONDARY, fontsize=10, va="top",
     )

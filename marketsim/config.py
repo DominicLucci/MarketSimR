@@ -28,6 +28,9 @@ class SimConfig:
     initial_value: float = 10_000.0  # ticks ($100.00)
     news_prob: float = 0.02
     news_sigma: float = 0.005
+    # Designed-news option. If positive, news arrives every `news_every` steps instead of at
+    # random, and each jump has log size exactly news_sigma in a random direction.
+    news_every: int = 0
 
     # Private signal = value + error; the error's standard deviation depends on the group.
     sigma_informed: float = 10.0  # ticks
@@ -57,6 +60,8 @@ class SimConfig:
             raise ValueError("standard deviations and margin cannot be negative")
         if not 0.0 <= self.news_prob <= 1.0:
             raise ValueError("news_prob must be between 0 and 1")
+        if type(self.news_every) is not int or self.news_every < 0:
+            raise ValueError("news_every must be 0 (random news) or a positive whole number of steps")
         if self.initial_value <= 0 or self.initial_cash < 0 or self.initial_shares < 0:
             raise ValueError("initial value must be positive and endowments non-negative")
         if min(self.max_order_size, self.order_lifetime, self.quote_sample_every) < 1 or self.max_need < 0:

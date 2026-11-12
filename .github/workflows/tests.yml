@@ -23,8 +23,10 @@ jobs:
         run: python -m pytest
       - name: Replay the worked example
         run: python -m marketsim.example
-      - name: Regenerate the experiment and compare with the saved results
-        run: python -m marketsim.experiment --check
+      - name: Regenerate the experiments and compare with the saved results
+        run: |
+          python -m marketsim.experiment --check
+          python -m marketsim.experiment --check --out results/scheduled_news
 
   tested-versions:
     name: Python 3.13, the exact versions the results were made with
@@ -38,3 +40,4 @@ jobs:
       - run: python -m pip install --no-deps -e .
       - run: python -m pytest
       - run: python -m marketsim.experiment --check
+      - run: python -m marketsim.experiment --check --out results/scheduled_news

@@ -73,30 +73,37 @@ What the pilot shows, in this model:
 
 ### How fast prices take in news
 
-![Share of a value change reflected in the mid-quote, by steps since the news](results/informed_share/news_response.png)
+![Share of a value change reflected in the mid-quote, by steps since the news](results/scheduled_news/news_response.png)
 
-For each isolated news event (no other news within 40 steps either side) the experiment
-tracks how much of the value change the mid-quote has taken in. The half-life is the
-number of steps until half is reflected.
+A second experiment is built for this question. The value changes by exactly 0.5% every
+100 steps, up or down at random, so every news event is the same size and well separated
+(31 to 39 usable events per run). It tracks how much of each change the mid-quote has
+taken in. The half-life is the number of steps until half is reflected.
 
-| Better-informed share | Half-life, orders rest 80 steps (main) | Change from 0% [95% interval] | Half-life, orders rest 20 steps | Change from 0% [95% interval] |
-| ---: | ---: | --- | ---: | --- |
-| 0% | 9.1 steps | | 6.2 steps | |
-| 10% | 9.6 | +0.2 [−2.2, +2.7] | 5.3 | −1.0 [−2.6, +0.6] |
-| 25% | 12.4 | +3.1 [−0.2, +6.4] | 5.3 | −1.0 [−2.6, +0.6] |
-| 50% | 15.9 | +6.8 [+3.7, +9.9] | 8.1 | +1.9 [+0.1, +3.7] |
-| 75% | 18.2 | +9.0 [+5.8, +12.2] | 8.6 | +2.4 [+0.2, +4.6] |
+| Better-informed share | Reflected after 10 steps, orders rest 80 steps (main) | Half-life | Change from 0% [95% interval] | Reflected after 10 steps, orders rest 20 steps | Half-life | Change from 0% [95% interval] |
+| ---: | ---: | ---: | --- | ---: | ---: | --- |
+| 0% | 48% | 11.4 steps | | 67% | 6.9 steps | |
+| 10% | 51% | 10.5 | −0.8 [−2.3, +0.6] | 63% | 6.9 | +0.1 [−1.4, +1.6] |
+| 25% | 47% | 12.0 | +0.6 [−1.2, +2.4] | 65% | 7.0 | +0.1 [−1.8, +2.1] |
+| 50% | 34% | 15.6 | +4.2 [+1.9, +6.6] | 64% | 7.8 | +0.9 [−0.6, +2.4] |
+| 75% | 24% | 18.7 | +7.3 [+5.0, +9.6] | 64% | 8.4 | +1.5 [+0.2, +2.9] |
 
 - **In the main configuration, more better-informed traders means news reaches quotes more
-  slowly at first.** The half-life roughly doubles between 0% and 75%. After 40 steps
-  83% to 91% of the news is reflected at every share.
+  slowly at first.** Ten steps after news the mid-quote reflects 48% of it with no
+  better-informed traders and 24% when they are 75% of the market (difference −24 points,
+  95% interval −31 to −17). After 40 steps 87% to 92% is reflected at every share.
 - **The likely cause is stale quotes.** In this model a resting order changes only when its
   owner next arrives or it expires. Better-informed traders' old quotes sit close together
   at the old value and hold the mid-quote there until they are taken or removed. When
-  orders expire after 20 steps instead of 80, every market adjusts faster and most of
-  the slowdown goes away.
-- **These estimates are much noisier than the table above.** A run has about 14 isolated
-  news events, the intervals are wide, and at 10% and 25% no difference is detectable.
+  orders expire after 20 steps instead of 80, every market adjusts faster and the gap in
+  quotes nearly disappears (after 10 steps: −3 points, interval −12 to +5).
+- **Trade prices lag in both cases.** Ten steps after news the last trade price reflects
+  70% of it at 0% and 38% at 75% in the main configuration, and 81% against 57% with
+  20-step orders. Trades execute at the resting order's price, and right after news that
+  is often a stale one.
+- **The main experiment agrees but is noisier.** With random news it has about 14 usable
+  events per run and finds the same pattern with wider intervals (half-life +9.0 steps at
+  75%, interval +5.8 to +12.2; chart in `results/informed_share/news_response.png`).
 
 Read all of this as properties of this model. The intervals measure variation across
 seeds under one configuration; they say nothing about whether the assumptions below are
@@ -108,22 +115,24 @@ Requires Python 3.12 or newer.
 
 ```
 python -m pip install -e ".[dev]"   # numpy, pandas, scipy, matplotlib and pytest
-python -m pytest                    # all checks (89 tests, about 8 seconds)
+python -m pytest                    # all checks (91 tests, about 9 seconds)
 python -m marketsim.dashboard       # the demo, at http://127.0.0.1:8000
 python -m marketsim.example         # the first hand-worked case, step by step
 python -m marketsim.run --seed 1 --informed-share 0.25 --trace-step 1
 python -m marketsim.run --seed 1 --informed-share 0.25 --save results/scratch/run1
 python -m marketsim.experiment      # regenerates results/informed_share (about 35 seconds)
+python -m marketsim.experiment --design scheduled_news   # regenerates results/scheduled_news
 python -m marketsim.experiment --check   # regenerates and compares with the saved results
+python -m marketsim.experiment --check --out results/scheduled_news
 python -m marketsim.benchmark       # times a fixed workload
 ```
 
-`marketsim.experiment` rewrites the tables and charts in `results/informed_share/`. The
-saved results were made with Python 3.13 and the library versions in
+`marketsim.experiment` rewrites the tables and charts in `results/informed_share/`, or in
+`results/scheduled_news/` for the designed news experiment. The saved results were made with Python 3.13 and the library versions in
 `requirements-tested.txt`.
 
 On every push GitHub installs the project on a clean machine, runs the tests and the
-worked example, and runs the `--check` command. It does this on Python 3.12 and 3.13 with
+worked example, and runs both `--check` commands. It does this on Python 3.12 and 3.13 with
 the newest libraries and once more with the exact tested versions
 (`.github/workflows/tests.yml`).
 

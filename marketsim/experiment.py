@@ -63,6 +63,20 @@ LEVEL_MEASURES = MARKET_MEASURES + (
 )
 CONTROL_SEEDS = 5
 
+# Each design is one saved experiment: settings applied to every run, the variants compared,
+# and where the results live.
+DESIGNS: dict[str, dict[str, Any]] = {
+    # News arrives at random. The main experiment.
+    "informed_share": {"out": "results/informed_share", "base": {}, "variants": VARIANTS},
+    # News arrives every 100 steps with a fixed size of 0.5% in a random direction, so every
+    # event is isolated and equally large. Built to measure the news response precisely.
+    "scheduled_news": {
+        "out": "results/scheduled_news",
+        "base": {"news_every": 100},
+        "variants": {"main": {}, "short_lived_orders": {"order_lifetime": 20}},
+    },
+}
+
 
 def mean_interval(values: pd.Series) -> dict[str, Any]:
     """Mean and 95% t-interval across seeds. Unavailable values are dropped and counted out."""
@@ -79,14 +93,14 @@ def mean_interval(values: pd.Series) -> dict[str, Any]:
     return out
 
 
-def run_grid(base: SimConfig, seeds: list[int]) -> tuple[pd.DataFrame, pd.DataFrame]:
+def run_grid(base: SimConfig, seeds: list[int], variants: dict[str, dict[str, Any]]) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Every variant x seed x informed share.
 
     Returns one row per run, and the news-response curve of every run in long form
     (one row per run and number of steps after news).
     """
     rows, curves = [], []
-    for variant, overrides in VARIANTS.items():
+    for variant, overrides in variants.items():
         for seed in seeds:
             for share in SHARES:
                 config = base.with_(seed=seed, informed_share=share, **overrides)
@@ -175,7 +189,11 @@ def equal_information_control(base: SimConfig, seeds: list[int]) -> dict[str, An
     }
 
 
-def run_experiment(base: SimConfig, n_seeds: int, out_dir: str | Path, chart: bool = True) -> Path:
+def run_experiment(
+    base: SimConfig, n_seeds: int, out_dir: str | Path, chart: bool = True, design: str = "informed_share"
+) -> Path:
+    """Run one design. `base` must already include the design's own base settings."""
+    variants = DESIGNS[design]["variants"]
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     seeds = list(range(n_seeds))
@@ -185,7 +203,7 @@ def run_experiment(base: SimConfig, n_seeds: int, out_dir: str | Path, chart: bo
     if not control["identical_within_every_seed"]:
         raise SystemExit(f"equal-information control failed for seeds {control['seeds_with_differences']}")
 
-    runs, curves = run_grid(base, seeds)
+    runs, curves = run_grid(base, seeds, variants)
     levels, paired, news = levels_table(runs), paired_table(runs), news_table(curves)
     runs.to_csv(out / "runs.csv", index=False)
     levels.to_csv(out / "levels.csv", index=False)
@@ -195,13 +213,16 @@ def run_experiment(base: SimConfig, n_seeds: int, out_dir: str | Path, chart: bo
     base_settings = base.to_dict()
     del base_settings["seed"], base_settings["informed_share"]  # these two are varied
     manifest = {
-        "command": f"python -m marketsim.experiment --seeds {n_seeds}"
+        "command": "python -m marketsim.experiment"
+        + ("" if design == "informed_share" else f" --design {design}")
+        + f" --seeds {n_seeds}"
         + ("" if base.n_steps == SimConfig().n_steps else f" --steps {base.n_steps}"),
+        "design": design,
         "model_version": MODEL_VERSION,
         "base_config": base_settings,
         "seeds": seeds,
         "informed_shares": list(SHARES),
-        "variants": VARIANTS,
+        "variants": variants,
         "runs": {"grid": len(runs), "control": control["runs"]},
         "unit_of_analysis": "seed; 95% t-interval of within-seed differences from the 0% baseline",
         "environment": {
@@ -216,9 +237,16 @@ def run_experiment(base: SimConfig, n_seeds: int, out_dir: str | Path, chart: bo
     if chart:
         from .charts import market_chart, news_chart, outcomes_chart
 
-        market_chart(runs, paired, out / "market_measures.png")
-        outcomes_chart(runs, levels, out / "trader_outcomes.png")
-        news_chart(news, n_seeds, out / "news_response.png")
+        if design == "informed_share":
+            market_chart(runs, paired, out / "market_measures.png")
+            outcomes_chart(runs, levels, out / "trader_outcomes.png")
+            news_chart(news, n_seeds, out / "news_response.png")
+        else:
+            news_chart(
+                news, n_seeds, out / "news_response.png",
+                subtitle=f"Mean over {n_seeds} seeds. The value changes by {base.news_sigma:.1%} every "
+                f"{base.news_every} steps, up or down at random.",
+            )
     return out
 
 
@@ -238,7 +266,9 @@ def check_results(reference_dir: str | Path, tolerance: float = 1e-9) -> list[st
     base = SimConfig.from_dict(manifest["base_config"])
     problems = []
     with tempfile.TemporaryDirectory() as scratch:
-        fresh = run_experiment(base, len(manifest["seeds"]), scratch, chart=False)
+        fresh = run_experiment(
+            base, len(manifest["seeds"]), scratch, chart=False, design=manifest.get("design", "informed_share")
+        )
         for name in TABLES:
             try:
                 pd.testing.assert_frame_equal(
@@ -254,6 +284,17 @@ def check_results(reference_dir: str | Path, tolerance: float = 1e-9) -> list[st
 def results_text(out: Path) -> str:
     """A compact text table of the main variant's paired differences."""
     paired = pd.read_csv(out / "paired_differences.csv")
+    if json.loads((out / "manifest.json").read_text()).get("design") == "scheduled_news":
+        lines = ["news half-life in steps: difference from the 0% baseline, mean [95% interval] across seeds"]
+        rows = paired[paired["measure"] == "news_half_life_mid"]
+        for variant, group in rows.groupby("variant", sort=True):
+            lines.append(f"  {variant}")
+            for _, row in group.iterrows():
+                lines.append(
+                    f"    {row['informed_share']:>4.0%}: {row['mean_difference']:>6.2f} "
+                    f"[{row['ci_low']:.2f}, {row['ci_high']:.2f}]  n={int(row['n_pairs'])}"
+                )
+        return "\n".join(lines)
     main = paired[(paired["variant"] == "main") & paired["measure"].isin(["price_error", "spread", "volume"])]
     lines = ["difference from the 0% baseline, mean [95% interval] across seeds (main variant)"]
     for measure, unit in (("price_error", 100.0), ("spread", 100.0), ("volume", 1.0)):
@@ -271,11 +312,13 @@ def main(argv: list[str] | None = None) -> Path:
     parser = argparse.ArgumentParser(description="Informed-share experiment with paired seeds.")
     parser.add_argument("--seeds", type=int, default=30, help="number of seeds (0..N-1)")
     parser.add_argument("--steps", type=int, default=SimConfig().n_steps)
-    parser.add_argument("--out", default="results/informed_share")
+    parser.add_argument("--design", choices=sorted(DESIGNS), default="informed_share")
+    parser.add_argument("--out", help="results directory (default: the design's own)")
     parser.add_argument("--no-chart", action="store_true")
     parser.add_argument("--check", action="store_true", help="regenerate and compare with the results saved in --out")
     args = parser.parse_args(argv)
 
+    args.out = args.out or DESIGNS[args.design]["out"]
     if args.check:
         problems = check_results(args.out)
         if problems:
@@ -283,7 +326,8 @@ def main(argv: list[str] | None = None) -> Path:
         print(f"saved results in {args.out}/ match a fresh run")
         return Path(args.out)
 
-    out = run_experiment(SimConfig(n_steps=args.steps), args.seeds, args.out, chart=not args.no_chart)
+    base = SimConfig(n_steps=args.steps, **DESIGNS[args.design]["base"])
+    out = run_experiment(base, args.seeds, args.out, chart=not args.no_chart, design=args.design)
     print(results_text(out))
     print(f"\nwrote {out}/")
     return out

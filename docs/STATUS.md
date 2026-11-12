@@ -3,7 +3,7 @@
 Updated at the end of each build session so the next session has a verifiable place to
 pick up.
 
-## Where things stand (after session 2, 2026-11-12)
+## Where things stand (after session 3, 2026-11-12)
 
 | Handoff week | What exists | State |
 | --- | --- | --- |
@@ -14,6 +14,33 @@ pick up.
 | 6 | Benchmark, README, automatic checks on a clean machine | Done; README numbers are pilot numbers |
 
 `main` holds everything. GitHub runs the checks on every push.
+
+## Session 3 (2026-11-12)
+
+### Built
+
+- **Scheduled news as a model option** (`news_every` in `marketsim/config.py`): the value
+  changes every N steps by a fixed log size in a random direction. Off by default, so no
+  existing result changes.
+- **A second saved experiment,** `python -m marketsim.experiment --design scheduled_news`,
+  in `results/scheduled_news/`: 0.5% news every 100 steps, 5 shares x 30 seeds, with 80-step
+  and 20-step orders (300 runs). 31 to 39 usable news events per run instead of about 14.
+- GitHub's checks now regenerate and compare both experiments.
+
+### Checks run
+
+- `python -m pytest`: 91 passed. Both `--check` commands pass locally.
+- Adding the option left every table of the main experiment unchanged (only its manifest
+  gained the new setting).
+- Scheduled value path checked for timing, fixed size, both directions and prefix stability.
+
+### What changed in the findings
+
+- The news-speed result is now firm in the main configuration: ten steps after news the
+  mid-quote reflects 48% of it at 0% better informed and 24% at 75% (difference −24 points,
+  95% interval −31 to −17).
+- With 20-step orders the gap in quotes nearly disappears (−3 points, −12 to +5), while
+  trade prices still lag at high informed shares.
 
 ## Session 2 (2026-11-12)
 
@@ -92,7 +119,8 @@ Tooling:
 - **The configuration has not been frozen.** README numbers are pilot results. Bump
   `MODEL_VERSION` in `marketsim/config.py` when a rule changes results.
 - No source has been read or cited to motivate the model.
-- The news measures are noisy: about 14 usable events per run.
+- In the main (random news) experiment the news measures are noisy, with about 14 usable
+  events per run. Use `results/scheduled_news/` for news-speed claims.
 - The dashboard does not show the new measures and has only been checked in headless
   Chrome at desktop width.
 
@@ -100,8 +128,8 @@ Tooling:
 
 1. Dominic reviews the four behavioural assumptions in `docs/model_rules.md` section 8.
    The newest one, that resting orders are never refreshed, now visibly drives a result.
-2. A designed news experiment: scheduled, equal-sized, well-separated value changes
-   instead of random ones, so the news response is estimated from many more events.
-3. Liquidity measures: effective spread, realized spread and price impact, depth within a
+2. Liquidity measures: effective spread, realized spread and price impact, depth within a
    few ticks of the mid-quote.
-4. Learning from prices as a switch, then rerun the experiment with it on and off.
+3. Learning from prices as a switch, then rerun the experiments with it on and off.
+4. A quote-refresh switch (traders pull or reprice a resting order when their signal
+   moves), to test the stale-quote explanation directly.

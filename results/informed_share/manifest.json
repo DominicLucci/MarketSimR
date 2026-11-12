@@ -1,5 +1,6 @@
 {
   "command": "python -m marketsim.experiment --seeds 30",
+  "design": "informed_share",
   "model_version": "0.2.0-pilot",
   "base_config": {
     "n_traders": 40,
@@ -9,6 +10,7 @@
     "initial_value": 10000.0,
     "news_prob": 0.02,
     "news_sigma": 0.005,
+    "news_every": 0,
     "sigma_informed": 10.0,
     "sigma_uninformed": 100.0,
     "margin": 20.0,

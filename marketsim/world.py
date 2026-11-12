@@ -29,8 +29,13 @@ def _rng(seed: int, *key: int) -> np.random.Generator:
 
 def value_path(config: SimConfig) -> np.ndarray:
     """Underlying value at each step, in ticks. Always positive; path[0] is the initial value."""
-    is_news = _rng(config.seed, 0, 0).random(config.n_steps) < config.news_prob
-    size = _rng(config.seed, 0, 1).standard_normal(config.n_steps) * config.news_sigma
+    draws = _rng(config.seed, 0, 1).standard_normal(config.n_steps)
+    if config.news_every > 0:  # scheduled news: fixed size, random direction
+        is_news = np.arange(config.n_steps) % config.news_every == 0
+        size = np.sign(draws) * config.news_sigma
+    else:  # random news: random timing and size
+        is_news = _rng(config.seed, 0, 0).random(config.n_steps) < config.news_prob
+        size = draws * config.news_sigma
     is_news[0] = False  # the run starts at the initial value
     return config.initial_value * np.exp(np.cumsum(np.where(is_news, size, 0.0)))
 
