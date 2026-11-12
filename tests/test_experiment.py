@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from marketsim.config import SimConfig
-from marketsim.experiment import SHARES, VARIANTS, mean_interval, paired_table, run_experiment
+from marketsim.experiment import SHARES, VARIANTS, check_results, mean_interval, paired_table, run_experiment
 
 
 def test_mean_interval_matches_a_hand_calculation():
@@ -67,3 +67,14 @@ def test_experiment_writes_a_complete_and_repeatable_result(tmp_path):
     assert manifest["runs"] == {"grid": 20, "control": 10} and manifest["seeds"] == [0, 1]
     assert manifest["base_config"]["n_steps"] == 300
     assert json.loads((first / "control.json").read_text())["identical_within_every_seed"] is True
+
+
+def test_check_passes_on_untouched_results_and_catches_a_changed_number(tmp_path):
+    saved = run_experiment(SimConfig(n_steps=300), 2, tmp_path / "saved", chart=False)
+    assert check_results(saved) == []
+
+    runs = pd.read_csv(saved / "runs.csv")
+    runs.loc[3, "volume"] += 1  # one share in one run
+    runs.to_csv(saved / "runs.csv", index=False)
+    problems = check_results(saved)
+    assert len(problems) == 1 and problems[0].startswith("runs.csv")

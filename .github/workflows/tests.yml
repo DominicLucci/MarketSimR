@@ -1,0 +1,40 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  latest:
+    name: Python ${{ matrix.python-version }}, newest libraries
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install from a clean machine
+        run: python -m pip install -e ".[dev]"
+      - name: Run all checks
+        run: python -m pytest
+      - name: Replay the worked example
+        run: python -m marketsim.example
+      - name: Regenerate the experiment and compare with the saved results
+        run: python -m marketsim.experiment --check
+
+  tested-versions:
+    name: Python 3.13, the exact versions the results were made with
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install -r requirements-tested.txt
+      - run: python -m pip install --no-deps -e .
+      - run: python -m pytest
+      - run: python -m marketsim.experiment --check

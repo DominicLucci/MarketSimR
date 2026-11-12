@@ -1,0 +1,7 @@
+# The exact library versions the saved results and README numbers were produced with,
+# on Python 3.13. pyproject.toml allows newer versions; this file records what was tested.
+numpy==2.5.3
+pandas==3.0.5
+scipy==1.18.1
+matplotlib==3.11.2
+pytest==9.1.1

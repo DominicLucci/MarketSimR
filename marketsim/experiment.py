@@ -22,6 +22,7 @@ import argparse
 import hashlib
 import json
 import platform
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -186,6 +187,35 @@ def run_experiment(base: SimConfig, n_seeds: int, out_dir: str | Path, chart: bo
     return out
 
 
+TABLES = ("runs.csv", "levels.csv", "paired_differences.csv")
+
+
+def check_results(reference_dir: str | Path, tolerance: float = 1e-9) -> list[str]:
+    """Regenerate the experiment and compare it with saved results. Returns the problems found.
+
+    Numbers are compared with a small tolerance, not byte for byte, because different
+    processors and library builds can differ in the last digit of a floating-point result.
+    """
+    reference = Path(reference_dir)
+    manifest = json.loads((reference / "manifest.json").read_text())
+    if manifest["model_version"] != MODEL_VERSION:
+        return [f"saved results are from model {manifest['model_version']}, the code is {MODEL_VERSION}"]
+    base = SimConfig.from_dict(manifest["base_config"])
+    problems = []
+    with tempfile.TemporaryDirectory() as scratch:
+        fresh = run_experiment(base, len(manifest["seeds"]), scratch, chart=False)
+        for name in TABLES:
+            try:
+                pd.testing.assert_frame_equal(
+                    pd.read_csv(reference / name), pd.read_csv(fresh / name), check_exact=False, rtol=tolerance, atol=tolerance
+                )
+            except AssertionError as error:
+                problems.append(f"{name}: {str(error).splitlines()[0]}")
+        if json.loads((reference / "control.json").read_text()) != json.loads((fresh / "control.json").read_text()):
+            problems.append("control.json differs")
+    return problems
+
+
 def results_text(out: Path) -> str:
     """A compact text table of the main variant's paired differences."""
     paired = pd.read_csv(out / "paired_differences.csv")
@@ -208,7 +238,15 @@ def main(argv: list[str] | None = None) -> Path:
     parser.add_argument("--steps", type=int, default=SimConfig().n_steps)
     parser.add_argument("--out", default="results/informed_share")
     parser.add_argument("--no-chart", action="store_true")
+    parser.add_argument("--check", action="store_true", help="regenerate and compare with the results saved in --out")
     args = parser.parse_args(argv)
+
+    if args.check:
+        problems = check_results(args.out)
+        if problems:
+            raise SystemExit("saved results do NOT match a fresh run:\n  " + "\n  ".join(problems))
+        print(f"saved results in {args.out}/ match a fresh run")
+        return Path(args.out)
 
     out = run_experiment(SimConfig(n_steps=args.steps), args.seeds, args.out, chart=not args.no_chart)
     print(results_text(out))
