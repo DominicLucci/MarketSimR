@@ -7,13 +7,51 @@ from typing import Any
 
 import numpy as np
 
-from .events import OrderAccepted, OrderExpired, OrderRejected, Trade
+from .events import OrderAccepted, OrderExpired, OrderRejected, Side, Trade
 from .news import HORIZONS, half_life, last_trade_path, response_curve
 from .simulation import RunResult
 
 
+IMPACT_HORIZON = 10  # steps after a trade at which the mid-quote is read again
+
+
 def _mean(values: list[float]) -> float | None:
     return float(np.mean(values)) if values else None
+
+
+def spread_decomposition(result: RunResult) -> dict[str, Any]:
+    """Effective spread and its two parts, averaged over trades. All in ticks.
+
+    For a trade at price p started by an incoming buy (d = +1) or sell (d = -1), with m0 the
+    mid-quote the incoming trader saw and m1 the mid-quote IMPACT_HORIZON steps later:
+
+        effective spread = 2 d (p - m0)    what the incoming side paid to trade now
+        price impact     = 2 d (m1 - m0)   how far quotes then moved its way: the part of
+                                           the cost that reflects information in the order
+        realized spread  = 2 d (p - m1)    what the resting side kept
+
+    effective = realized + impact, trade by trade. Trades without a two-sided quote before,
+    or without a mid-quote at the later step, are left out of all three.
+    """
+    mid, effective, realized, impact = result.mid_path, [], [], []
+    for trade in result.events:
+        if not isinstance(trade, Trade):
+            continue
+        seen = result.decisions[trade.time]
+        later = trade.time + IMPACT_HORIZON
+        if seen["best_bid"] is None or seen["best_ask"] is None or later >= len(mid) or np.isnan(mid[later]):
+            continue
+        before = (seen["best_bid"] + seen["best_ask"]) / 2
+        d = 1 if trade.aggressor is Side.BUY else -1
+        effective.append(2 * d * (trade.price - before))
+        impact.append(2 * d * (float(mid[later]) - before))
+        realized.append(2 * d * (trade.price - float(mid[later])))
+    return {
+        "effective_spread": _mean(effective),
+        "price_impact": _mean(impact),
+        "realized_spread": _mean(realized),
+        "n_trades_decomposed": len(effective),
+    }
 
 
 def trader_outcomes(result: RunResult) -> list[dict[str, Any]]:
@@ -116,6 +154,8 @@ def summarize(result: RunResult) -> dict[str, Any]:
         "spread": _mean([ask - bid for bid, _, ask, _ in two_sided]),
         "bid_size": _mean([s[2] for s in samples if s[1] is not None]),
         "ask_size": _mean([s[4] for s in samples if s[3] is not None]),
+        # cost of trading and its split into information (price impact) and what the resting side keeps
+        **spread_decomposition(result),
         # trader outcomes: mean per trader in each group; None if the group is empty
         "wealth_change_informed": _mean([o["wealth_change"] for o in by_group[True]]),
         "wealth_change_uninformed": _mean([o["wealth_change"] for o in by_group[False]]),

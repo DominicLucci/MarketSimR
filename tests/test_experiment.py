@@ -90,7 +90,7 @@ def test_scheduled_news_design_runs_and_verifies(tmp_path):
     assert (out / "news_response.png").exists() and not (out / "market_measures.png").exists()
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["design"] == "scheduled_news" and manifest["base_config"]["news_every"] == 100
-    assert set(manifest["variants"]) == {"main", "short_lived_orders"}
+    assert set(manifest["variants"]) == {"main", "short_lived_orders", "pull_on_news"}
     runs = pd.read_csv(out / "runs.csv")
-    assert len(runs) == 2 * 2 * len(SHARES) and runs["news_events"].max() == 5  # news at 100..500
+    assert len(runs) == 3 * 2 * len(SHARES) and runs["news_events"].max() == 5  # news at 100..500
     assert check_results(out) == []

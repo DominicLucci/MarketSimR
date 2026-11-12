@@ -3,7 +3,7 @@
 Updated at the end of each build session so the next session has a verifiable place to
 pick up.
 
-## Where things stand (after session 3, 2026-11-12)
+## Where things stand (after session 4, 2026-11-12)
 
 | Handoff week | What exists | State |
 | --- | --- | --- |
@@ -14,6 +14,31 @@ pick up.
 | 6 | Benchmark, README, automatic checks on a clean machine | Done; README numbers are pilot numbers |
 
 `main` holds everything. GitHub runs the checks on every push.
+
+## Session 4 (2026-11-12)
+
+### Built
+
+- **Cost-of-trading measures** (`spread_decomposition` in `marketsim/metrics.py`): effective
+  spread, price impact and realized spread per trade, with a 10-step horizon.
+- **Quote-refresh option** `cancel_on_news` (off by default): every resting order is
+  cancelled on a step where the value changes. Added as a third variant, `pull_on_news`,
+  of the scheduled-news experiment (now 450 runs).
+
+### Checks run
+
+- `python -m pytest`: 95 passed. Both `--check` commands pass.
+- Decomposition checked on two hand-worked trades and on a real run (parts add up).
+- Earlier columns of the main experiment's `runs.csv` are unchanged.
+
+### What changed in the findings
+
+- The stale-quote explanation for slow news is now tested directly: with quotes pulled on
+  news the mid-quote reflects news within about one step at every informed share.
+- Trading at once gets cheaper as the informed share rises (effective spread $0.68 to
+  $0.24), while what the resting side keeps falls from $0.18 a share to a loss of $0.06.
+- Price impact is $0.51 even with no better-informed traders, so it is mostly mechanical
+  in this model and should not be read as information alone.
 
 ## Session 3 (2026-11-12)
 
@@ -128,8 +153,7 @@ Tooling:
 
 1. Dominic reviews the four behavioural assumptions in `docs/model_rules.md` section 8.
    The newest one, that resting orders are never refreshed, now visibly drives a result.
-2. Liquidity measures: effective spread, realized spread and price impact, depth within a
-   few ticks of the mid-quote.
-3. Learning from prices as a switch, then rerun the experiments with it on and off.
-4. A quote-refresh switch (traders pull or reprice a resting order when their signal
-   moves), to test the stale-quote explanation directly.
+2. Learning from prices as a switch, then rerun the experiments with it on and off.
+3. Depth within a few ticks of the mid-quote, and a price-impact measure net of the
+   mechanical effect of removing the best quote.
+4. Show the new measures in the dashboard.

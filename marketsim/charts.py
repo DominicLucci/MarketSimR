@@ -142,8 +142,13 @@ SHARE_RAMP = ((0.0, "#86b6ef"), (0.10, "#5598e7"), (0.25, "#2a78d6"), (0.50, "#1
 def news_chart(news: pd.DataFrame, n_seeds: int, path: str | Path, subtitle: str | None = None) -> None:
     """Share of a value change reflected in the mid-quote, by steps since the news.
     Left: main variant. Right: the same markets with short-lived orders."""
-    panels = (("main", "Orders rest up to 80 steps (main)"), ("short_lived_orders", "Orders rest up to 20 steps"))
-    fig, axes = plt.subplots(1, 2, figsize=(12.5, 5.0), facecolor=SURFACE, sharey=True)
+    titles = {
+        "main": "Orders rest up to 80 steps (main)",
+        "short_lived_orders": "Orders rest up to 20 steps",
+        "pull_on_news": "Quotes pulled when news arrives",
+    }
+    panels = [(variant, title) for variant, title in titles.items() if variant in set(news["variant"])]
+    fig, axes = plt.subplots(1, len(panels), figsize=(6.25 * len(panels), 5.0), facecolor=SURFACE, sharey=True)
     for ax, (variant, title) in zip(axes, panels):
         ax.set_facecolor(SURFACE)
         for side in ("top", "right", "left"):
@@ -165,7 +170,7 @@ def news_chart(news: pd.DataFrame, n_seeds: int, path: str | Path, subtitle: str
         ax.set_xlabel("steps since the news", color=TEXT_SECONDARY, fontsize=9)
         _titles(ax, title, "share of the value change reflected in the mid-quote")
     axes[0].text(40, 1.015, "all of the news", color=TEXT_MUTED, fontsize=9, ha="right", va="bottom")
-    axes[1].legend(frameon=False, fontsize=9, labelcolor=TEXT_SECONDARY, loc="lower right", handlelength=1.6)
+    axes[-1].legend(frameon=False, fontsize=9, labelcolor=TEXT_SECONDARY, loc="lower right", handlelength=1.6)
     fig.suptitle("How fast quotes take in news", x=0.012, y=0.985, ha="left", color=TEXT, fontsize=14, fontweight="bold")
     fig.text(
         0.012, 0.925,

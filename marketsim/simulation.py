@@ -13,7 +13,7 @@ from typing import Any
 import numpy as np
 
 from .config import MODEL_VERSION, SimConfig
-from .events import Event
+from .events import Event, Side
 from .exchange import Exchange
 from .traders import TraderView, decide
 from .world import arrival_schedule, informed_traders, trader_luck, value_path
@@ -62,6 +62,10 @@ def run_simulation(
     for time in range(config.n_steps):
         value = float(values[time])  # 1. the value updates first
         exchange.advance_to(time)  # 2. expired orders leave
+        if config.cancel_on_news and time > 0 and values[time] != values[time - 1]:
+            resting = list(exchange.book.orders(Side.BUY)) + list(exchange.book.orders(Side.SELL))
+            for order in sorted(resting, key=lambda o: o.order_id):  # everyone pulls their quote
+                exchange.cancel(order.trader_id, order.order_id)
 
         # 3. one trader arrives, replaces any order it still has resting, and acts
         trader_id = int(arrivals[time])

@@ -48,6 +48,7 @@ VARIANTS: dict[str, dict[str, Any]] = {
 # Measures that exist at every share, compared with the 0% baseline within a seed.
 MARKET_MEASURES = (
     "price_error", "mid_error", "spread", "volume", "n_trades", "bid_size", "ask_size", "share_two_sided",
+    "effective_spread", "price_impact", "realized_spread",
     *(f"news_in_mid_{h}" for h in HORIZONS), *(f"news_in_trades_{h}" for h in HORIZONS), "news_half_life_mid",
 )
 # Measures reported as levels. Some are unavailable when a group is empty.
@@ -73,7 +74,11 @@ DESIGNS: dict[str, dict[str, Any]] = {
     "scheduled_news": {
         "out": "results/scheduled_news",
         "base": {"news_every": 100},
-        "variants": {"main": {}, "short_lived_orders": {"order_lifetime": 20}},
+        "variants": {
+            "main": {},
+            "short_lived_orders": {"order_lifetime": 20},
+            "pull_on_news": {"cancel_on_news": True},
+        },
     },
 }
 

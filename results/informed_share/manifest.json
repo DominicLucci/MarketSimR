@@ -11,6 +11,7 @@
     "news_prob": 0.02,
     "news_sigma": 0.005,
     "news_every": 0,
+    "cancel_on_news": false,
     "sigma_informed": 10.0,
     "sigma_uninformed": 100.0,
     "margin": 20.0,

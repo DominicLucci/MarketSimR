@@ -126,6 +126,10 @@ decision from its inputs to its fills.
   news-speed results depend on this: with orders that expire after 20 steps instead of 80
   most of the slowdown at high informed shares goes away.
 
+  Setting `cancel_on_news = True` makes every trader pull its resting order on a step
+  where the value changes (traders know that news arrived, not what it was). It is off in
+  the baseline and used as a variant in the scheduled-news experiment.
+
 These four are the first things to revisit if the results need to speak to real markets.
 
 ## 9. Randomness and paired runs
@@ -156,6 +160,12 @@ unavailable, never as zero.
   informed, because the mix of trades changes with the informed share.
 - **Mid-quote error:** mean of `|mid-quote - value|` over every step that has both a bid
   and an offer. It does not depend on which trades happen.
+- **Cost of trading:** for a trade at price p started by an incoming buy (d = +1) or sell
+  (d = -1), with m0 the mid-quote the incoming trader saw and m1 the mid-quote 10 steps
+  later: effective spread `2d(p - m0)`, price impact `2d(m1 - m0)`, realized spread
+  `2d(p - m1)`. Effective = realized + impact for every trade. Trades without the needed
+  quotes are left out of all three. Price impact includes the mechanical effect of
+  removing the best quote, so it is not purely information.
 - **News response** (`marketsim/news.py`): for each isolated news event at step T (no other
   news within 40 steps before or after), the share of the value change reflected k steps
   later is `sign(V[T] - V[T-1]) x (P[T+k] - P[T-1]) / |V[T] - V[T-1]|`, where P is the

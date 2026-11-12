@@ -71,6 +71,30 @@ What the pilot shows, in this model:
 - **Control.** With equal precision in both groups, relabelling who counts as "better
   informed" produced identical event logs in all 25 control runs.
 
+### Cost of trading
+
+Each trade's cost to the incoming side is split the standard way, using the mid-quote the
+incoming trader saw and the mid-quote 10 steps later. The effective spread is what the
+incoming side paid to trade at once. Price impact is how far quotes then moved in its
+favour. The realized spread is the rest, which the resting side kept.
+
+| Better-informed share | Effective spread | Price impact | Realized spread (resting side keeps) |
+| ---: | ---: | ---: | ---: |
+| 0% | $0.68 | $0.51 | $0.18 |
+| 10% | $0.60 | $0.43 | $0.17 |
+| 25% | $0.47 | $0.31 | $0.16 |
+| 50% | $0.31 | $0.23 | $0.08 |
+| 75% | $0.24 | $0.30 | −$0.06 |
+
+- **Trading at once gets cheaper** as the better-informed share rises: the effective spread
+  falls by $0.44 between 0% and 75% (95% interval $0.43 to $0.46).
+- **Resting orders stop paying.** What the resting side keeps falls from $0.18 a share to
+  a loss of $0.06 at 75% (a fall of $0.24, interval $0.22 to $0.26). At that share the
+  average resting order is traded against just before quotes move against it.
+- **Read price impact with care.** Even with no better-informed traders it is $0.51,
+  because taking the best quote moves the mid-quote mechanically. It measures information
+  in the order flow only on top of that.
+
 ### How fast prices take in news
 
 ![Share of a value change reflected in the mid-quote, by steps since the news](results/scheduled_news/news_response.png)
@@ -92,11 +116,16 @@ taken in. The half-life is the number of steps until half is reflected.
   slowly at first.** Ten steps after news the mid-quote reflects 48% of it with no
   better-informed traders and 24% when they are 75% of the market (difference −24 points,
   95% interval −31 to −17). After 40 steps 87% to 92% is reflected at every share.
-- **The likely cause is stale quotes.** In this model a resting order changes only when its
-  owner next arrives or it expires. Better-informed traders' old quotes sit close together
-  at the old value and hold the mid-quote there until they are taken or removed. When
-  orders expire after 20 steps instead of 80, every market adjusts faster and the gap in
-  quotes nearly disappears (after 10 steps: −3 points, interval −12 to +5).
+- **The cause is stale quotes.** In this model a resting order changes only when its owner
+  next arrives or it expires. Better-informed traders' old quotes sit close together at
+  the old value and hold the mid-quote there until they are taken or removed. Two tests
+  support this. When orders expire after 20 steps instead of 80, every market adjusts
+  faster and the gap in quotes nearly disappears (after 10 steps: −3 points, interval −12
+  to +5). When every trader pulls its quote the moment news arrives, the mid-quote
+  reflects the news within about one step at every share and no slowdown remains.
+- **Pulling quotes also protects resting orders.** With quotes pulled on news the resting
+  side keeps $0.14 to $0.19 a share at every informed share. In the main configuration of
+  this experiment it keeps $0.01 at 75%.
 - **Trade prices lag in both cases.** Ten steps after news the last trade price reflects
   70% of it at 0% and 38% at 75% in the main configuration, and 81% against 57% with
   20-step orders. Trades execute at the resting order's price, and right after news that
@@ -115,7 +144,7 @@ Requires Python 3.12 or newer.
 
 ```
 python -m pip install -e ".[dev]"   # numpy, pandas, scipy, matplotlib and pytest
-python -m pytest                    # all checks (91 tests, about 9 seconds)
+python -m pytest                    # all checks (95 tests, about 10 seconds)
 python -m marketsim.dashboard       # the demo, at http://127.0.0.1:8000
 python -m marketsim.example         # the first hand-worked case, step by step
 python -m marketsim.run --seed 1 --informed-share 0.25 --trace-step 1
@@ -212,7 +241,8 @@ The buyer ends with $30.00 and two shares, the seller with $20.00 and three shar
   profit by trading on better terms, not by speculating without limit.
 - **Resting orders are never refreshed.** A quote changes only when its owner next arrives
   or it expires, so even a well-informed trader leaves a stale quote in the book after
-  news. The news-speed result above depends on this.
+  news. The news-speed result above depends on this. The option `cancel_on_news` makes
+  every trader pull its quote when news arrives; it is off in the baseline.
 - **Depth at the best quote is almost always one order** (about three shares) with a
   one-cent tick and 40 traders, so that measure says little here.
 - The configuration in `marketsim/config.py` is a pilot and none of its numbers has been

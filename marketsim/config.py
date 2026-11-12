@@ -31,6 +31,9 @@ class SimConfig:
     # Designed-news option. If positive, news arrives every `news_every` steps instead of at
     # random, and each jump has log size exactly news_sigma in a random direction.
     news_every: int = 0
+    # Quote-refresh option. If True, every resting order is cancelled on a step where the
+    # value changes: traders know that news arrived (not what it was) and pull their quotes.
+    cancel_on_news: bool = False
 
     # Private signal = value + error; the error's standard deviation depends on the group.
     sigma_informed: float = 10.0  # ticks
