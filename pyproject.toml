@@ -15,6 +15,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["marketsim*"]
 
+[tool.setuptools.package-data]
+marketsim = ["*.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

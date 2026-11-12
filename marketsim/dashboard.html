@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MarketSim</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface: #fcfcfb; --raised: #ffffff; --text: #0b0b0b; --text-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7; --series-1: #2a78d6; --series-2: #eb6834; --border: rgba(11,11,11,0.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --surface: #1a1a19; --raised: #222221; --text: #f0efec; --text-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --series-1: #3987e5; --series-2: #d95926; --border: rgba(255,255,255,0.10);
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1280px; margin: 0 auto; padding: 28px 24px 56px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  h3 { font-size: 13px; margin: 0; font-weight: 600; }
+  p { margin: 0; }
+  .lede { color: var(--text-2); max-width: 78ch; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: end; margin: 22px 0 6px; padding: 14px 16px; background: var(--raised); border: 1px solid var(--border); border-radius: 10px; }
+  .controls label { display: grid; gap: 4px; font-size: 12px; color: var(--text-2); }
+  .controls label.check { display: flex; align-items: center; gap: 6px; padding-bottom: 7px; font-size: 14px; color: var(--text); }
+  input[type=number], select { font: inherit; padding: 6px 8px; border: 1px solid var(--axis); border-radius: 6px; background: var(--surface); color: var(--text); min-width: 92px; }
+  button { font: inherit; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--axis); background: var(--surface); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--series-1); border-color: var(--series-1); color: #fff; font-weight: 600; }
+  button:disabled { opacity: 0.55; cursor: default; }
+  .spacer { flex: 1; }
+  #status { min-height: 22px; font-size: 13px; color: var(--text-2); margin: 6px 2px 14px; }
+  #status.error { color: var(--series-2); }
+  .panels { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+  .panel { background: var(--raised); border: 1px solid var(--border); border-radius: 10px; padding: 18px 18px 10px; min-width: 0; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 16px; margin-bottom: 18px; }
+  .tile .label { font-size: 12px; color: var(--text-2); }
+  .tile .value { font-size: 21px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .tile .note { font-size: 12px; color: var(--muted); }
+  figure { margin: 0 0 16px; position: relative; }
+  figcaption { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; margin-bottom: 4px; }
+  figcaption .sub { font-size: 12px; color: var(--text-2); }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-2); margin-left: auto; }
+  .legend i { display: inline-block; vertical-align: middle; margin-right: 5px; }
+  .legend .line { width: 16px; height: 2px; background: var(--text-2); }
+  .legend .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--series-1); }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  svg text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .tip { position: absolute; pointer-events: none; background: var(--raised); border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font-size: 12px; line-height: 1.5; box-shadow: 0 2px 10px rgba(0,0,0,0.12); white-space: nowrap; display: none; z-index: 2; }
+  .tip b { font-weight: 600; }
+  .tip span { color: var(--text-2); }
+  section.block { margin-top: 26px; }
+  table { border-collapse: collapse; width: 100%; max-width: 760px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--grid); }
+  th:first-child, td:first-child { text-align: left; }
+  th { font-size: 12px; color: var(--text-2); font-weight: 600; }
+  details { margin-top: 26px; color: var(--text-2); }
+  details pre { font-size: 12px; background: var(--raised); border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow: auto; }
+  .hint { font-size: 13px; color: var(--text-2); margin-bottom: 10px; max-width: 86ch; }
+</style>
+</head>
+<body>
+<main>
+  <h1>MarketSim</h1>
+  <p class="lede">Software traders buy and sell one asset. The simulation knows what the asset is worth; each trader only gets a noisy private estimate. Change how many traders get a precise estimate and see what happens to prices, the quoted spread and who profits.</p>
+
+  <div class="controls">
+    <label>Seed <input id="seed" type="number" min="0" step="1" value="1"></label>
+    <label>Better-informed share <select id="shareA"></select></label>
+    <label class="check"><input id="compare" type="checkbox" checked> compare with</label>
+    <label>Second share, same seed <select id="shareB"></select></label>
+    <button id="run" class="primary">Run</button>
+    <span class="spacer"></span>
+    <button id="preset" title="Seed 1, 10% and 50% better informed, same seed">Preset: 10% vs 50%</button>
+    <button id="export" disabled>Download settings and results</button>
+  </div>
+  <div id="status" role="status"></div>
+
+  <div id="panels" class="panels"></div>
+  <section id="changed" class="block" hidden></section>
+  <details id="settings" hidden><summary>All settings of the first run</summary><pre></pre></details>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const NS = "http://www.w3.org/2000/svg";
+let runs = [];  // payloads currently shown
+
+const money = (ticks, digits = 2) => ticks == null ? "unavailable"
+  : (ticks < 0 ? "−" : "") + "$" + (Math.abs(ticks) / 100).toLocaleString("en-US", {minimumFractionDigits: digits, maximumFractionDigits: digits});
+const count = (n) => n == null ? "unavailable" : (n < 0 ? "−" : "") + Math.abs(Math.round(n)).toLocaleString("en-US");
+const pct = (x) => Math.round(x * 100) + "%";
+
+function niceTicks(min, max, target = 5) {
+  const span = max - min || 1, raw = span / target, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= raw);
+  const ticks = [];
+  for (let v = Math.ceil(min / step) * step; v <= max + step * 1e-9; v += step) ticks.push(Math.round(v / step) * step);
+  return ticks;
+}
+
+function el(name, attrs = {}, parent) {
+  const node = document.createElementNS(NS, name);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  if (parent) parent.appendChild(node);
+  return node;
+}
+
+/* One chart frame: gridlines, axes, a drawing callback and a hover layer. */
+function chart(figure, {height, xMax, yMin, yMax, yFormat, draw, describe}) {
+  const W = Math.max(figure.clientWidth, 320), H = height, m = {l: 56, r: 10, t: 8, b: 24};
+  const x = (t) => m.l + (t / xMax) * (W - m.l - m.r);
+  const y = (v) => H - m.b - ((v - yMin) / (yMax - yMin)) * (H - m.t - m.b);
+  const svg = el("svg", {viewBox: `0 0 ${W} ${H}`, role: "img"}, figure);
+  for (const v of niceTicks(yMin, yMax)) {
+    el("line", {x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: "var(--grid)", "stroke-width": 1}, svg);
+    el("text", {x: m.l - 8, y: y(v) + 4, "text-anchor": "end"}, svg).textContent = yFormat(v);
+  }
+  el("line", {x1: m.l, x2: W - m.r, y1: H - m.b, y2: H - m.b, stroke: "var(--axis)", "stroke-width": 1}, svg);
+  for (const t of niceTicks(0, xMax, 4)) {
+    el("text", {x: x(t), y: H - 7, "text-anchor": t === 0 ? "start" : "middle"}, svg).textContent = t === 0 ? "step 0" : count(t);
+  }
+  draw(svg, x, y);
+
+  const cross = el("line", {y1: m.t, y2: H - m.b, stroke: "var(--muted)", "stroke-width": 1, visibility: "hidden"}, svg);
+  const tip = document.createElement("div");
+  tip.className = "tip";
+  figure.appendChild(tip);
+  const hit = el("rect", {x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: "transparent"}, svg);
+  hit.addEventListener("mousemove", (event) => {
+    const box = svg.getBoundingClientRect(), px = (event.clientX - box.left) * (W / box.width);
+    const step = Math.max(0, Math.min(xMax, Math.round(((px - m.l) / (W - m.l - m.r)) * xMax)));
+    cross.setAttribute("x1", x(step)); cross.setAttribute("x2", x(step)); cross.setAttribute("visibility", "visible");
+    tip.innerHTML = describe(step);
+    tip.style.display = "block";
+    const left = (x(step) / W) * box.width, flip = left > box.width * 0.6;
+    tip.style.left = flip ? "" : left + 12 + "px";
+    tip.style.right = flip ? box.width - left + 12 + "px" : "";
+    tip.style.top = box.top - figure.getBoundingClientRect().top + 10 + "px";
+  });
+  hit.addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); tip.style.display = "none"; });
+}
+
+function nearestTrade(trades, step, reach) {
+  let lo = 0, hi = trades.length - 1, best = null;
+  while (lo <= hi) { const mid = (lo + hi) >> 1; if (trades[mid][0] < step) lo = mid + 1; else hi = mid - 1; }
+  for (const i of [lo - 1, lo]) {
+    if (i >= 0 && i < trades.length && Math.abs(trades[i][0] - step) <= reach && (!best || Math.abs(trades[i][0] - step) < Math.abs(best[0] - step))) best = trades[i];
+  }
+  return best;
+}
+
+function priceChart(figure, run, domain) {
+  const value = run.value, trades = run.trades, xMax = value.length - 1;
+  chart(figure, {
+    height: 280, xMax, yMin: domain.priceMin, yMax: domain.priceMax, yFormat: (v) => money(v, 0),
+    draw(svg, x, y) {
+      let dots = "";
+      for (const [t, price] of trades) dots += `<circle cx="${x(t).toFixed(1)}" cy="${y(price).toFixed(1)}" r="1.7"/>`;
+      const group = el("g", {fill: "var(--series-1)", "fill-opacity": 0.45}, svg);
+      group.innerHTML = dots;
+      let path = `M${x(0).toFixed(1)},${y(value[0]).toFixed(1)}`;
+      for (let t = 1; t <= xMax; t++) if (value[t] !== value[t - 1]) path += `H${x(t).toFixed(1)}V${y(value[t]).toFixed(1)}`;
+      path += `H${x(xMax).toFixed(1)}`;
+      el("path", {d: path, fill: "none", stroke: "var(--text-2)", "stroke-width": 2, "stroke-linejoin": "round"}, svg);
+    },
+    describe(step) {
+      const trade = nearestTrade(trades, step, Math.ceil(xMax / 150));
+      let html = `<b>Step ${count(step)}</b><br><span>Underlying value</span> ${money(value[step])}`;
+      if (trade) html += `<br><span>Trade at step ${count(trade[0])}</span> ${trade[2]} @ ${money(trade[1])}<br><span>Gap from value</span> ${money(trade[1] - value[trade[0]])}`;
+      else html += `<br><span>No trade near this step</span>`;
+      return html;
+    },
+  });
+}
+
+function spreadChart(figure, run, domain) {
+  const quotes = run.quotes, xMax = run.value.length - 1;
+  chart(figure, {
+    height: 170, xMax, yMin: 0, yMax: domain.spreadMax, yFormat: (v) => money(v, 2),
+    draw(svg, x, y) {
+      let path = "", pen = false;
+      for (const [t, bid, , ask] of quotes) {
+        if (bid == null || ask == null) { pen = false; continue; }
+        path += `${pen ? "L" : "M"}${x(t).toFixed(1)},${y(ask - bid).toFixed(1)}`;
+        pen = true;
+      }
+      el("path", {d: path, fill: "none", stroke: "var(--series-1)", "stroke-width": 1.5, "stroke-linejoin": "round", "stroke-linecap": "round"}, svg);
+    },
+    describe(step) {
+      const every = quotes.length > 1 ? quotes[1][0] - quotes[0][0] : 1;
+      const q = quotes[Math.min(quotes.length - 1, Math.round(step / every))];
+      const side = (v) => v == null ? "none" : money(v);
+      return `<b>Step ${count(q[0])}</b><br><span>Best bid</span> ${side(q[1])}<br><span>Best offer</span> ${side(q[3])}<br><span>Spread</span> ${q[1] == null || q[3] == null ? "unavailable" : money(q[3] - q[1])}`;
+    },
+  });
+}
+
+function tile(label, value, note) {
+  return `<div class="tile"><div class="label">${label}</div><div class="value">${value}</div><div class="note">${note}</div></div>`;
+}
+
+function panel(run) {
+  const s = run.summary, node = document.createElement("div");
+  node.className = "panel";
+  node.innerHTML = `
+    <h2>${pct(s.informed_share)} better informed <span style="font-weight:400;color:var(--text-2)">· ${s.n_informed} of ${s.n_informed + s.n_uninformed} traders · seed ${s.seed}</span></h2>
+    <div class="tiles">
+      ${tile("Price error", money(s.price_error), "mean gap between trade price and value")}
+      ${tile("Quoted spread", money(s.spread), `both sides quoted in ${pct(s.share_two_sided)} of samples`)}
+      ${tile("Volume", count(s.volume), `shares, in ${count(s.n_trades)} trades`)}
+      ${tile("Gain per better-informed trader", money(s.trading_gain_informed), "against never trading")}
+      ${tile("Gain per other trader", money(s.trading_gain_uninformed), "against never trading")}
+    </div>
+    <figure class="price"><figcaption><h3>Trade prices and underlying value</h3>
+      <span class="legend"><span><i class="line"></i>Underlying value</span><span><i class="dot"></i>Trade price</span></span></figcaption></figure>
+    <figure class="spread"><figcaption><h3>Quoted spread</h3><span class="sub">best offer minus best bid, sampled every ${run.manifest.config.quote_sample_every} steps</span></figcaption></figure>`;
+  $("panels").appendChild(node);
+  return node;
+}
+
+function changedTable(a, b) {
+  const rows = [
+    ["Price error", "price_error", money], ["Quoted spread", "spread", money], ["Volume (shares)", "volume", count], ["Trades", "n_trades", count],
+    ["Gain per better-informed trader", "trading_gain_informed", money], ["Gain per other trader", "trading_gain_uninformed", money],
+  ];
+  const body = rows.map(([label, key, format]) => {
+    const x = a.summary[key], y = b.summary[key];
+    const diff = x == null || y == null ? "unavailable" : format(y - x);
+    return `<tr><td>${label}</td><td>${format(x)}</td><td>${format(y)}</td><td>${diff}</td></tr>`;
+  }).join("");
+  $("changed").innerHTML = `<h2>What changed</h2>
+    <p class="hint">Both markets use seed ${a.summary.seed}: the same underlying value path, the same order of trader arrivals and the same luck for every trader. The only difference is how many traders get the precise signal.</p>
+    <table><thead><tr><th>Measure</th><th>${pct(a.summary.informed_share)} informed</th><th>${pct(b.summary.informed_share)} informed</th><th>Difference</th></tr></thead><tbody>${body}</tbody></table>`;
+  $("changed").hidden = false;
+}
+
+function render() {
+  $("panels").innerHTML = "";
+  $("changed").hidden = true;
+  if (!runs.length) return;
+  // Shared scales, so two panels can be compared by eye.
+  let priceMin = Infinity, priceMax = -Infinity, spreadMax = 0;
+  for (const run of runs) {
+    for (const v of run.value) { priceMin = Math.min(priceMin, v); priceMax = Math.max(priceMax, v); }
+    for (const t of run.trades) { priceMin = Math.min(priceMin, t[1]); priceMax = Math.max(priceMax, t[1]); }
+    for (const q of run.quotes) if (q[1] != null && q[3] != null) spreadMax = Math.max(spreadMax, q[3] - q[1]);
+  }
+  const pad = (priceMax - priceMin) * 0.04 || 50;
+  const domain = {priceMin: priceMin - pad, priceMax: priceMax + pad, spreadMax: spreadMax * 1.08 || 100};
+  // Add every panel before drawing, so each chart is sized for the final layout.
+  const nodes = runs.map((run) => panel(run));
+  nodes.forEach((node, i) => {
+    priceChart(node.querySelector(".price"), runs[i], domain);
+    spreadChart(node.querySelector(".spread"), runs[i], domain);
+  });
+  if (runs.length === 2) changedTable(runs[0], runs[1]);
+  $("settings").hidden = false;
+  $("settings").querySelector("pre").textContent = JSON.stringify(runs[0].manifest, null, 2);
+}
+
+async function fetchRun(seed, share) {
+  const response = await fetch(`/api/run?seed=${seed}&informed_share=${share}`);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "the run failed");
+  return data;
+}
+
+async function go() {
+  const seed = Number($("seed").value), shares = [$("shareA").value];
+  if ($("compare").checked && $("shareB").value !== $("shareA").value) shares.push($("shareB").value);
+  if (!Number.isInteger(seed) || seed < 0) { setStatus("Seed must be a whole number, 0 or more.", true); return; }
+  $("run").disabled = true;
+  setStatus("Running…");
+  try {
+    runs = await Promise.all(shares.map((share) => fetchRun(seed, share)));
+    render();
+    $("export").disabled = false;
+    const same = $("compare").checked && shares.length === 1 ? " Both shares are the same, so one market is shown." : "";
+    setStatus(`Model ${runs[0].manifest.model_version}. Hover over a chart to read values.${same}`);
+  } catch (error) {
+    setStatus(error.message, true);
+  } finally {
+    $("run").disabled = false;
+  }
+}
+
+function setStatus(text, isError = false) {
+  $("status").textContent = text;
+  $("status").className = isError ? "error" : "";
+}
+
+function download() {
+  const shares = runs.map((r) => Math.round(r.summary.informed_share * 100)).join("_vs_");
+  const content = {exported_from: "MarketSim dashboard", how_to_reproduce: "SimConfig.from_dict(run.manifest.config) with the stated model_version", runs};
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([JSON.stringify(content)], {type: "application/json"}));
+  link.download = `marketsim_seed${runs[0].summary.seed}_share${shares}.json`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+async function start() {
+  const options = await (await fetch("/api/options")).json();
+  for (const id of ["shareA", "shareB"]) {
+    $(id).innerHTML = options.shares.map((s) => `<option value="${s}">${pct(s)}</option>`).join("");
+  }
+  const preset = () => { $("seed").value = 1; $("shareA").value = "0.1"; $("shareB").value = "0.5"; $("compare").checked = true; $("shareB").disabled = false; go(); };
+  $("run").addEventListener("click", go);
+  $("preset").addEventListener("click", preset);
+  $("export").addEventListener("click", download);
+  $("compare").addEventListener("change", () => { $("shareB").disabled = !$("compare").checked; });
+  let timer;
+  window.addEventListener("resize", () => { clearTimeout(timer); timer = setTimeout(render, 150); });
+  preset();
+}
+start();
+</script>
+</body>
+</html>

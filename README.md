@@ -8,14 +8,19 @@ that result with the underlying value shows how information reaches a market.
 **The question:** how does the proportion of better-informed traders affect price
 accuracy, liquidity and trader profits?
 
-![Price error, quoted spread and volume against the share of better-informed traders](results/informed_share/market_measures.png)
+![The dashboard comparing a market with 10% better-informed traders to one with 50%, on the same seed](docs/dashboard.png)
 
-> **Status: pilot.** The engine, market model and first experiment run and are tested. The
-> market configuration was chosen by the build agent and has not been frozen, the dashboard
-> and performance benchmark are not built, and setup has not been tried on a clean machine.
+The same market run twice on one seed: with 10% of traders well informed (left) trade
+prices scatter around the underlying value, and with 50% (right) they hug it.
+
+> **Status: pilot.** The engine, market model, first experiment and local dashboard run
+> and are tested. The market configuration was chosen by the build agent and has not been
+> frozen, and setup has not been tried on a clean machine.
 > [docs/STATUS.md](docs/STATUS.md) lists what is done, what was checked and what is next.
 
 ## First result (pilot configuration)
+
+![Price error, quoted spread and volume against the share of better-informed traders](results/informed_share/market_measures.png)
 
 Forty traders, 4,000 steps, 30 seeds. For each seed all five settings run on the same
 value path, the same arrival schedule and the same per-trader luck, so each setting is
@@ -73,15 +78,46 @@ scipy 1.18.1, matplotlib 3.11.2 and pytest 9.1.1. `pip install -e ".[dev]"` shou
 everything but has not yet been tried on a clean machine.
 
 ```
-python -m pytest                    # all checks (75 tests, about 5 seconds)
+python -m pytest                    # all checks (80 tests, about 6 seconds)
+python -m marketsim.dashboard       # the demo, at http://127.0.0.1:8000
 python -m marketsim.example         # the first hand-worked case, step by step
 python -m marketsim.run --seed 1 --informed-share 0.25 --trace-step 1
 python -m marketsim.run --seed 1 --informed-share 0.25 --save results/scratch/run1
 python -m marketsim.experiment      # regenerates results/informed_share (about 25 seconds)
+python -m marketsim.benchmark       # times a fixed workload
 ```
 
 `marketsim.experiment` rewrites the tables and both charts in `results/informed_share/`.
 The CSV and JSON files come out byte-for-byte the same on the same library versions.
+
+## The dashboard
+
+`python -m marketsim.dashboard` serves one page on your own computer. Pick a seed and a
+better-informed share, optionally a second share on the same seed, and run. Each market
+shows its measures, trade prices against the underlying value, and the quoted spread;
+hovering a chart reads off values. "Preset: 10% vs 50%" loads a same-seed comparison, and
+"Download settings and results" saves a JSON file whose `manifest.config` reproduces each
+run.
+
+The page gets its data from `run_simulation`, the same function the command line and the
+experiment call, and a test checks that the dashboard's numbers equal the batch runner's.
+
+Framework choice: Python's built-in web server plus plain JavaScript and SVG, so the demo
+adds no dependency and nothing to install. Streamlit was the other candidate; it could not
+be installed in the build session, so it could not have been checked.
+
+## Benchmark
+
+`python -m marketsim.benchmark` runs the default market (40 traders, 4,000 steps, 25%
+informed) for seeds 0 to 4: 20,000 trader arrivals producing 34,965 logged events. Best of
+three on Python 3.13.18, numpy 2.5.3, x86-64 Linux in the build container:
+
+| | Time | Arrivals per second |
+| --- | ---: | ---: |
+| Invariant checks off | 0.28 s | about 70,000 |
+| Invariant checks on after every operation | 1.88 s | about 10,600 |
+
+The whole 325-run experiment takes about 25 seconds, so nothing has been optimized.
 
 ## How the market works
 
@@ -145,10 +181,12 @@ The buyer ends with $30.00 and two shares, the seller with $20.00 and three shar
 | `marketsim/config.py` | Every setting of a run, and the model version |
 | `marketsim/world.py` | The value path, arrivals and per-trader luck, each from its own random stream |
 | `marketsim/traders.py` | What a trader can see and the decision rule |
-| `marketsim/simulation.py` | The one runner used by the command line and the experiment |
+| `marketsim/simulation.py` | The one runner used by the command line, the experiment and the dashboard |
 | `marketsim/metrics.py` | Per-run measures |
 | `marketsim/experiment.py`, `charts.py` | The paired informed-share experiment and its charts |
 | `marketsim/run.py`, `storage.py` | Run one market, trace a decision, export a run |
+| `marketsim/dashboard.py`, `dashboard.html` | The local demo: a small server and one page |
+| `marketsim/benchmark.py` | Times a fixed workload |
 | `tests/reference.py` | An independent naive exchange used to cross-check the engine |
 
 ## Sources

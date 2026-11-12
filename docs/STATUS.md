@@ -7,29 +7,33 @@ pick up.
 
 ### Built
 
-- **Weeks 1 and 2, exchange engine:** clock, price-time matching, reservations, settlement,
-  partial fills, cancellation, expiry, event log, invariant checks, replay.
-- **Week 3, market model (pilot):** underlying value with discrete news, private signals,
-  inventory needs, two trader groups, one shared simulation runner, per-run measures,
-  a command-line run with a decision trace and an export.
-- **Week 4, first experiment (pilot):** five informed shares x 30 seeds, paired within seed,
-  plus a narrower-precision-gap sensitivity check (300 grid runs) and an equal-information
-  control (25 runs). One command regenerates tables and charts in `results/informed_share/`.
+| Handoff week | What exists | State |
+| --- | --- | --- |
+| 1 and 2 | Exchange engine: clock, price-time matching, reservations, settlement, partial fills, cancellation, expiry, event log, invariant checks, replay | Done and tested |
+| 3 | Market model: underlying value with discrete news, private signals, inventory needs, two trader groups, one shared runner, per-run measures, decision trace, export | Runs and is tested; configuration is a pilot |
+| 4 | Informed-share experiment: 5 shares x 30 seeds paired within seed, narrower-gap sensitivity check (300 grid runs), equal-information control (25 runs), tables and charts from one command | Done as a pilot result |
+| 5 | Local dashboard on the shared runner, with same-seed comparison preset and export | Done and tested in a browser |
+| 6 | Benchmark of a fixed workload; README | Benchmark measured; README drafted; clean-machine setup not tried |
 
 ### Checks run
 
-- `python -m pytest`: 75 passed.
+- `python -m pytest`: 80 passed.
+- Fresh clone of the pushed branch: all tests pass, every README command runs, and
+  regenerating the experiment changes no file (tables and charts byte-identical).
 - `python -m marketsim.example`: one trade of 2 @ $10.00; buyer ends with $30.00 and 2
   shares; seller ends with $20.00 and 3 shares, 1 reserved until the cancel.
 - Engine against the independent reference model: 300 random streams x 200 commands,
-  identical after every command.
+  identical trades, balances, reservations and book after every command.
 - Eight deliberately planted engine bugs were each caught by the suite.
-- Simulation: exact replay from version + config + seed; information-access check;
-  equal-information control; pairing of value path, arrivals and per-trader luck across
-  settings; trading gains sum to zero.
+- Simulation: exact replay from version + config + seed; orders unaffected by future
+  values; identical event logs under equal-information relabelling; value path, arrivals
+  and per-trader luck shared across settings; trading gains sum to zero.
 - Experiment: interval arithmetic against a hand calculation; differences taken within
-  seed; two runs of the experiment write byte-identical tables; control passed.
-- Charts were rendered and looked at; label rendering and clipped subtitles were fixed.
+  seed; two runs write byte-identical tables; control passed.
+- Dashboard: its numbers equal the batch runner's for the same settings; settings are
+  recoverable from the export; opened in headless Chrome and exercised (run, same-seed
+  comparison, hover tooltip, download, single-run mode) with no page errors.
+- Charts and the dashboard were rendered and looked at, and layout defects were fixed.
 - Side check, not saved: with news switched off (8 seeds) price error falls steadily with
   the informed share, which supports the reading that the rise at 75% comes from trades
   against quotes made stale by news.
@@ -51,21 +55,28 @@ Market model (all in `marketsim/config.py`, reasoning in `docs/model_rules.md` 7
   sets the price; traders do not learn from prices.
 - One live order per trader, 80-step order lifetime, 4,000 steps, 40 traders.
 
-The configuration is a pilot. It has not been frozen.
+Tooling:
+
+- Dashboard on Python's built-in web server with plain JavaScript and SVG, no framework.
+- 95% t-intervals across seeds for the experiment (adds scipy as a dependency).
 
 ### Not done
 
-- The configuration has not been frozen, so the experiment is a pilot result.
-- `pip install -e ".[dev]"` has not been tried: package installs were unavailable in the
-  build session. Commands were run against libraries already present.
-- No performance benchmark yet (week 6).
+- **The configuration has not been frozen.** The experiment and README numbers are pilot
+  results and will change if any model choice above changes. Bump `MODEL_VERSION` in
+  `marketsim/config.py` when a rule changes results.
+- **Setup from a clean machine.** `pip install -e ".[dev]"` has not been tried: package
+  installs were unavailable in the build session. Everything was run against libraries
+  already present (versions in the README).
+- No source has been read or cited to motivate the model.
+- The dashboard has only been checked in headless Chrome at desktop width.
+- All work is on the `claude/engine` branch. `main` still holds only the first README.
 
 ### Next unfinished milestone
 
-Week 5: the dashboard on the shared runner (`marketsim.simulation.run_simulation`), with a
-preset that reuses one seed across two informed shares and an export of configuration and
-results. `marketsim.storage.save_run` already writes the export files.
-
-Before that, Dominic should decide whether to keep the pilot configuration and the three
-behavioural assumptions listed in `docs/model_rules.md` section 8, since the dashboard
-and README will present whatever the model does.
+1. Dominic reviews the three behavioural assumptions in `docs/model_rules.md` section 8
+   and the pilot numbers, then freezes or changes the configuration.
+2. Rerun `python -m marketsim.experiment` and update the README tables if anything changed.
+3. On a clean machine: clone, `pip install -e ".[dev]"`, run the README commands, and fix
+   whatever the README got wrong.
+4. Merge `claude/engine` into `main`.
