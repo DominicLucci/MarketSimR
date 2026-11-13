@@ -32,8 +32,20 @@ def spread_decomposition(result: RunResult) -> dict[str, Any]:
 
     effective = realized + impact, trade by trade. Trades without a two-sided quote before,
     or without a mid-quote at the later step, are left out of all three.
+
+    Price impact is split further at ma, the mid-quote at the end of the trade's own step:
+
+        immediate impact = 2 d (ma - m0)   the trade's own footprint: the best quote it used
+                                           up and whatever is left of its order resting
+        later impact     = 2 d (m1 - ma)   how quotes kept moving its way afterwards, from
+                                           orders sent later; this is the part that can
+                                           reflect information held by others
+
+    immediate + later = price impact. Trades whose own step ends one-sided are left out of
+    the split only.
     """
     mid, effective, realized, impact = result.mid_path, [], [], []
+    immediate, later_part = [], []
     for trade in result.events:
         if not isinstance(trade, Trade):
             continue
@@ -46,11 +58,50 @@ def spread_decomposition(result: RunResult) -> dict[str, Any]:
         effective.append(2 * d * (trade.price - before))
         impact.append(2 * d * (float(mid[later]) - before))
         realized.append(2 * d * (trade.price - float(mid[later])))
+        after = mid[trade.time]
+        if not np.isnan(after):
+            immediate.append(2 * d * (float(after) - before))
+            later_part.append(2 * d * (float(mid[later]) - float(after)))
     return {
         "effective_spread": _mean(effective),
         "price_impact": _mean(impact),
         "realized_spread": _mean(realized),
+        "impact_immediate": _mean(immediate),
+        "impact_later": _mean(later_part),
         "n_trades_decomposed": len(effective),
+    }
+
+
+def need_met(result: RunResult) -> dict[str, Any]:
+    """How much of the trading that traders came to do actually happens.
+
+    At each arrival a trader is |target - shares| away from its inventory target. need_met
+    is the number of shares its order from that arrival filled, summed over arrivals and
+    divided by the total distance, overall and for each group. Gains from trade sum to zero
+    across traders; this measure does not, so it can show whether the market serves the
+    reason to trade.
+    """
+    filled: dict[int, int] = {}
+    for event in result.events:
+        if isinstance(event, Trade):
+            filled[event.buy_order_id] = filled.get(event.buy_order_id, 0) + event.quantity
+            filled[event.sell_order_id] = filled.get(event.sell_order_id, 0) + event.quantity
+    totals = {True: [0, 0], False: [0, 0]}  # informed? -> [filled, wanted]
+    for decision in result.decisions:
+        wanted = abs(decision["target"] - decision["shares"])
+        if wanted == 0:
+            continue
+        group = totals[bool(decision["informed"])]
+        group[0] += filled.get(decision["order_id"], 0) if decision["order_id"] is not None else 0
+        group[1] += wanted
+
+    def share(f: int, w: int) -> float | None:
+        return f / w if w else None
+
+    return {
+        "need_met": share(totals[True][0] + totals[False][0], totals[True][1] + totals[False][1]),
+        "need_met_informed": share(*totals[True]),
+        "need_met_uninformed": share(*totals[False]),
     }
 
 
@@ -154,6 +205,9 @@ def summarize(result: RunResult) -> dict[str, Any]:
         "spread": _mean([ask - bid for bid, _, ask, _ in two_sided]),
         "bid_size": _mean([s[2] for s in samples if s[1] is not None]),
         "ask_size": _mean([s[4] for s in samples if s[3] is not None]),
+        # shares resting within DEPTH_WINDOW ticks of the mid-quote, both sides together
+        "depth_near_mid": _mean([b + a for _, b, a in result.depth_samples]),
+        **need_met(result),
         # cost of trading and its split into information (price impact) and what the resting side keeps
         **spread_decomposition(result),
         # trader outcomes: mean per trader in each group; None if the group is empty

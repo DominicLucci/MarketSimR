@@ -18,6 +18,8 @@ from .exchange import Exchange
 from .traders import TraderView, decide, estimate_value
 from .world import arrival_schedule, informed_traders, trader_luck, value_path
 
+DEPTH_WINDOW = 50  # ticks either side of the mid-quote counted as "near" for depth
+
 
 @dataclass(slots=True)
 class RunResult:
@@ -32,6 +34,9 @@ class RunResult:
     final_accounts: dict[int, tuple[int, int]] = field(default_factory=dict)  # cash, shares
     # Mid-quote at the end of every step (after the arriving trader acts); NaN when a side is missing.
     mid_path: np.ndarray = field(default_factory=lambda: np.empty(0))
+    # On the quote clock, when both sides are quoted: shares resting within DEPTH_WINDOW
+    # ticks of the mid-quote on the bid side and on the ask side.
+    depth_samples: list[tuple[int, int, int]] = field(default_factory=list)
 
 
 def run_simulation(
@@ -58,6 +63,7 @@ def run_simulation(
     decisions: list[dict[str, Any]] = []
     quote_samples: list[tuple[int, int | None, int, int | None, int]] = []
     mid_path = np.full(config.n_steps, np.nan)
+    depth_samples: list[tuple[int, int, int]] = []
 
     for time in range(config.n_steps):
         value = float(values[time])  # 1. the value updates first
@@ -123,6 +129,10 @@ def run_simulation(
             mid_path[time] = q.mid
         if time % config.quote_sample_every == 0:
             quote_samples.append((time, q.best_bid, q.bid_size, q.best_ask, q.ask_size))
+            if q.mid is not None:
+                near_bid = sum(o.remaining for o in exchange.book.orders(Side.BUY) if o.price >= q.mid - DEPTH_WINDOW)
+                near_ask = sum(o.remaining for o in exchange.book.orders(Side.SELL) if o.price <= q.mid + DEPTH_WINDOW)
+                depth_samples.append((time, near_bid, near_ask))
 
     return RunResult(
         config=config,
@@ -135,4 +145,5 @@ def run_simulation(
         quote_samples=quote_samples,
         final_accounts={i: (a.cash, a.shares) for i, a in exchange.accounts.items()},
         mid_path=mid_path,
+        depth_samples=depth_samples,
     )

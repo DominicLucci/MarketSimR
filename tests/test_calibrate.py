@@ -4,7 +4,7 @@ import pytest
 
 from marketsim.calibrate import bisect_fixed_point, calibrate, produced_error
 from marketsim.config import SimConfig
-from marketsim.experiment import CALIBRATED_PRICE_SD, DESIGNS, SHARES, calibrated, run_grid
+from marketsim.experiment import CALIBRATED_PRICE_SD, DESIGNS, SHARES, calibrated, design_shares, run_grid
 
 SMALL = SimConfig(n_steps=600)
 
@@ -43,8 +43,10 @@ def test_per_share_settings_must_cover_every_share():
         run_grid(SMALL.with_(n_steps=50), [0], partial)
 
 
-def test_stored_calibration_covers_both_designs_and_every_share():
-    assert set(CALIBRATED_PRICE_SD) == set(DESIGNS)
+def test_stored_calibration_covers_every_design_that_uses_it_at_every_share():
+    assert set(CALIBRATED_PRICE_SD) == {d for d in DESIGNS if "learn_calibrated" in DESIGNS[d]["variants"]}
     for design in DESIGNS:
-        assert set(CALIBRATED_PRICE_SD[design]) == set(SHARES)
+        if "learn_calibrated" not in DESIGNS[design]["variants"]:
+            continue
+        assert set(CALIBRATED_PRICE_SD[design]) == set(design_shares(design))
         assert DESIGNS[design]["variants"]["learn_calibrated"] == calibrated(design)

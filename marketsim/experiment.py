@@ -50,7 +50,12 @@ BASELINE_SHARE = 0.0
 CALIBRATED_PRICE_SD: dict[str, dict[float, float]] = {
     "informed_share": {0.0: 53.2, 0.10: 50.3, 0.25: 46.4, 0.50: 40.1, 0.75: 34.7},
     "scheduled_news": {0.0: 45.7, 0.10: 42.8, 0.25: 39.0, 0.50: 31.0, 0.75: 24.7},
+    "robustness": {0.0: 48.2, 0.10: 45.5, 0.25: 41.5, 0.50: 33.9, 0.75: 28.0, 0.90: 25.5, 1.0: 24.1},
 }
+
+
+NEWS_SIGN_TRUST = (15, 30, 60, 120, 240, 480)  # price_sd in ticks
+NEWS_SIGN_LIFETIMES = (20, 80)
 
 
 def calibrated(design: str) -> dict[str, object]:
@@ -68,6 +73,7 @@ VARIANTS: dict[str, dict[str, Any]] = {
 MARKET_MEASURES = (
     "price_error", "mid_error", "spread", "volume", "n_trades", "bid_size", "ask_size", "share_two_sided",
     "effective_spread", "price_impact", "realized_spread",
+    "impact_immediate", "impact_later", "depth_near_mid", "need_met",
     *(f"news_in_mid_{h}" for h in HORIZONS), *(f"news_in_trades_{h}" for h in HORIZONS), "news_half_life_mid",
 )
 # Measures reported as levels. Some are unavailable when a group is empty.
@@ -75,6 +81,8 @@ LEVEL_MEASURES = MARKET_MEASURES + (
     "price_error_both_informed",
     "price_error_mixed",
     "price_error_neither_informed",
+    "need_met_informed",
+    "need_met_uninformed",
     "trading_gain_informed",
     "trading_gain_uninformed",
     "gain_gap",
@@ -101,7 +109,35 @@ DESIGNS: dict[str, dict[str, Any]] = {
             "learn_calibrated": calibrated("scheduled_news"),
         },
     },
+    # Robustness: the scheduled-news market at twice the size and length, a finer share grid
+    # up to everyone better informed, and seeds 100..129, which no other result has used.
+    "robustness": {
+        "out": "results/robustness",
+        "base": {"news_every": 100, "n_traders": 80, "n_steps": 8_000},
+        "shares": (0.0, 0.10, 0.25, 0.50, 0.75, 0.90, 1.0),
+        "first_seed": 100,
+        "variants": {"main": {}, "learn_calibrated": calibrated("robustness")},
+    },
+    # What decides the sign of the news-speed result: fixed trust in prices from heavy
+    # (price_sd $0.15) to light ($4.80), and no learning (the limit of no trust), crossed with
+    # 20- and 80-step orders. Scheduled news.
+    "news_sign": {
+        "out": "results/news_sign",
+        "base": {"news_every": 100},
+        "variants": {
+            f"{name}_life{life}": {**settings, "order_lifetime": life}
+            for life in NEWS_SIGN_LIFETIMES
+            for name, settings in [
+                *((f"trust{t}", {"learn_from_prices": True, "price_sd": float(t)}) for t in NEWS_SIGN_TRUST),
+                ("no_learning", {}),
+            ]
+        },
+    },
 }
+
+
+def design_shares(design: str) -> tuple[float, ...]:
+    return tuple(DESIGNS[design].get("shares", SHARES))
 
 
 def mean_interval(values: pd.Series) -> dict[str, Any]:
@@ -119,7 +155,9 @@ def mean_interval(values: pd.Series) -> dict[str, Any]:
     return out
 
 
-def run_grid(base: SimConfig, seeds: list[int], variants: dict[str, dict[str, Any]]) -> tuple[pd.DataFrame, pd.DataFrame]:
+def run_grid(
+    base: SimConfig, seeds: list[int], variants: dict[str, dict[str, Any]], shares: tuple[float, ...] = SHARES
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Every variant x seed x informed share.
 
     Returns one row per run, and the news-response curve of every run in long form
@@ -129,10 +167,10 @@ def run_grid(base: SimConfig, seeds: list[int], variants: dict[str, dict[str, An
     for variant, settings in variants.items():
         overrides = {k: v for k, v in settings.items() if k != "by_share"}
         by_share = settings.get("by_share", {})
-        if "by_share" in settings and set(by_share) != set(SHARES):
-            raise ValueError(f"variant {variant}: per-share settings must cover every share {SHARES}")
+        if "by_share" in settings and set(by_share) != set(shares):
+            raise ValueError(f"variant {variant}: per-share settings must cover every share {shares}")
         for seed in seeds:
-            for share in SHARES:
+            for share in shares:
                 config = base.with_(seed=seed, informed_share=share, **overrides, **by_share.get(share, {}))
                 result = run_simulation(config)
                 row = {"variant": variant, **summarize(result)}
@@ -178,7 +216,7 @@ def paired_table(runs: pd.DataFrame) -> pd.DataFrame:
         wide = group.set_index(["seed", "informed_share"])
         for measure in MARKET_MEASURES:
             table = wide[measure].unstack("informed_share").astype(float)
-            for share in SHARES:
+            for share in sorted(group["informed_share"].unique()):
                 if share == BASELINE_SHARE:
                     continue
                 difference = table[share] - table[BASELINE_SHARE]  # NaN if either side is unavailable
@@ -201,19 +239,19 @@ def _fingerprint(events: list) -> str:
     return digest.hexdigest()
 
 
-def equal_information_control(base: SimConfig, seeds: list[int]) -> dict[str, Any]:
+def equal_information_control(base: SimConfig, seeds: list[int], shares: tuple[float, ...] = SHARES) -> dict[str, Any]:
     """Give both groups the same precision. The 'better informed' label must then be inert."""
     equal = base.with_(sigma_informed=base.sigma_uninformed)
     mismatched = []
     for seed in seeds:
-        prints = {share: _fingerprint(run_simulation(equal.with_(seed=seed, informed_share=share)).events) for share in SHARES}
+        prints = {share: _fingerprint(run_simulation(equal.with_(seed=seed, informed_share=share)).events) for share in shares}
         if len(set(prints.values())) != 1:
             mismatched.append(seed)
     return {
         "description": "both groups get sigma_uninformed; event logs compared across informed shares",
         "seeds": seeds,
-        "shares": list(SHARES),
-        "runs": len(seeds) * len(SHARES),
+        "shares": list(shares),
+        "runs": len(seeds) * len(shares),
         "identical_within_every_seed": not mismatched,
         "seeds_with_differences": mismatched,
     }
@@ -224,16 +262,18 @@ def run_experiment(
 ) -> Path:
     """Run one design. `base` must already include the design's own base settings."""
     variants = DESIGNS[design]["variants"]
+    shares = design_shares(design)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    seeds = list(range(n_seeds))
+    first = DESIGNS[design].get("first_seed", 0)
+    seeds = list(range(first, first + n_seeds))
 
-    control = equal_information_control(base, seeds[:CONTROL_SEEDS])
+    control = equal_information_control(base, seeds[:CONTROL_SEEDS], shares)
     (out / "control.json").write_text(json.dumps(control, indent=2) + "\n")
     if not control["identical_within_every_seed"]:
         raise SystemExit(f"equal-information control failed for seeds {control['seeds_with_differences']}")
 
-    runs, curves = run_grid(base, seeds, variants)
+    runs, curves = run_grid(base, seeds, variants, shares)
     levels, paired, news = levels_table(runs), paired_table(runs), news_table(curves)
     runs.to_csv(out / "runs.csv", index=False)
     levels.to_csv(out / "levels.csv", index=False)
@@ -246,12 +286,12 @@ def run_experiment(
         "command": "python -m marketsim.experiment"
         + ("" if design == "informed_share" else f" --design {design}")
         + f" --seeds {n_seeds}"
-        + ("" if base.n_steps == SimConfig().n_steps else f" --steps {base.n_steps}"),
+        + ("" if base.n_steps == DESIGNS[design]["base"].get("n_steps", SimConfig().n_steps) else f" --steps {base.n_steps}"),
         "design": design,
         "model_version": MODEL_VERSION,
         "base_config": base_settings,
         "seeds": seeds,
-        "informed_shares": list(SHARES),
+        "informed_shares": list(shares),
         "variants": variants,
         "runs": {"grid": len(runs), "control": control["runs"]},
         "unit_of_analysis": "seed; 95% t-interval of within-seed differences from the 0% baseline",
@@ -267,7 +307,11 @@ def run_experiment(
     if chart:
         from .charts import market_chart, news_chart, outcomes_chart
 
-        if design == "informed_share":
+        if design == "news_sign":
+            from .charts import news_sign_chart
+
+            news_sign_chart(paired, n_seeds, out / "news_sign.png")
+        elif design == "informed_share":
             market_chart(runs, paired, out / "market_measures.png")
             outcomes_chart(runs, levels, out / "trader_outcomes.png")
             news_chart(news, n_seeds, out / "news_response.png")
@@ -314,7 +358,14 @@ def check_results(reference_dir: str | Path, tolerance: float = 1e-9) -> list[st
 def results_text(out: Path) -> str:
     """A compact text table of the main variant's paired differences."""
     paired = pd.read_csv(out / "paired_differences.csv")
-    if json.loads((out / "manifest.json").read_text()).get("design") == "scheduled_news":
+    design = json.loads((out / "manifest.json").read_text()).get("design")
+    if design == "news_sign":
+        rows = paired[(paired["measure"] == "news_in_mid_10") & (paired["informed_share"] == max(SHARES))]
+        lines = ["news reflected 10 steps after it arrives: 75% minus 0% better informed, mean [95% interval]"]
+        for _, row in rows.iterrows():
+            lines.append(f"  {row['variant']:>22}: {row['mean_difference']:+.3f} [{row['ci_low']:+.3f}, {row['ci_high']:+.3f}]")
+        return "\n".join(lines)
+    if design in ("scheduled_news", "robustness"):
         lines = ["news half-life in steps: difference from the 0% baseline, mean [95% interval] across seeds"]
         rows = paired[paired["measure"] == "news_half_life_mid"]
         for variant, group in rows.groupby("variant", sort=True):
@@ -341,7 +392,7 @@ def results_text(out: Path) -> str:
 def main(argv: list[str] | None = None) -> Path:
     parser = argparse.ArgumentParser(description="Informed-share experiment with paired seeds.")
     parser.add_argument("--seeds", type=int, default=30, help="number of seeds (0..N-1)")
-    parser.add_argument("--steps", type=int, default=SimConfig().n_steps)
+    parser.add_argument("--steps", type=int, help="steps per run (default: the design's own)")
     parser.add_argument("--design", choices=sorted(DESIGNS), default="informed_share")
     parser.add_argument("--out", help="results directory (default: the design's own)")
     parser.add_argument("--no-chart", action="store_true")
@@ -356,7 +407,10 @@ def main(argv: list[str] | None = None) -> Path:
         print(f"saved results in {args.out}/ match a fresh run")
         return Path(args.out)
 
-    base = SimConfig(n_steps=args.steps, **DESIGNS[args.design]["base"])
+    settings = dict(DESIGNS[args.design]["base"])
+    if args.steps is not None:
+        settings["n_steps"] = args.steps
+    base = SimConfig(**settings)
     out = run_experiment(base, args.seeds, args.out, chart=not args.no_chart, design=args.design)
     print(results_text(out))
     print(f"\nwrote {out}/")

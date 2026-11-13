@@ -90,7 +90,7 @@ def calibrate(base: SimConfig, shares: Iterable[float], seeds: Iterable[int] = C
 
 
 def main(argv: list[str] | None = None) -> dict[float, float]:
-    from .experiment import CALIBRATED_PRICE_SD, DESIGNS, SHARES
+    from .experiment import CALIBRATED_PRICE_SD, DESIGNS, design_shares
 
     parser = argparse.ArgumentParser(description="Calibrate trust in prices at each informed share.")
     parser.add_argument("--design", choices=sorted(DESIGNS), default="informed_share")
@@ -98,7 +98,7 @@ def main(argv: list[str] | None = None) -> dict[float, float]:
     args = parser.parse_args(argv)
 
     base = SimConfig(**DESIGNS[args.design]["base"])
-    found = calibrate(base, SHARES)
+    found = calibrate(base, design_shares(args.design))
     values = {share: entry["price_sd"] for share, entry in found.items()}
     print(f"calibrated price_sd (ticks), design {args.design}, seeds {CALIBRATION_SEEDS[0]}..{CALIBRATION_SEEDS[-1]}")
     for share, entry in found.items():

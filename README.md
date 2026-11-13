@@ -91,9 +91,46 @@ favour. The realized spread is the rest, which the resting side kept.
 - **Resting orders stop paying.** What the resting side keeps falls from $0.18 a share to
   a loss of $0.06 at 75% (a fall of $0.24, interval $0.22 to $0.26). At that share the
   average resting order is traded against just before quotes move against it.
-- **Read price impact with care.** Even with no better-informed traders it is $0.51,
-  because taking the best quote moves the mid-quote mechanically. It measures information
-  in the order flow only on top of that.
+- **Most of the price impact is mechanical, and the rest grows with information.** Split
+  at the end of the trade's own step, the impact is an immediate part (the best quote the
+  trade used up, and what is left of its order resting) and a later part (how quotes kept
+  moving its way afterwards):
+
+  | Better-informed share | Immediate | Later |
+  | ---: | ---: | ---: |
+  | 0% | $0.48 | $0.02 |
+  | 10% | $0.41 | $0.02 |
+  | 25% | $0.28 | $0.03 |
+  | 50% | $0.14 | $0.09 |
+  | 75% | $0.10 | $0.20 |
+
+  With nobody better informed, almost all of it happens on the trade's own step. The later
+  part, which is what can reflect information held by others, rises by $0.18 between 0%
+  and 75% (interval $0.16 to $0.20). With learning from prices the later part is $0.07
+  even at 0%: there it is traders following the price, not information.
+
+### Depth and whether traders get to trade
+
+Two more measures from the main experiment. Depth is the number of shares resting within
+$0.50 of the mid-quote, both sides together. Need met is the share of the inventory gap
+traders arrive with that their order then fills: unlike trading gains it does not sum to
+zero, so it shows whether the market does the job traders came for.
+
+| Better-informed share | Depth near mid | Need met: all | better informed | others |
+| ---: | ---: | ---: | ---: | ---: |
+| 0% | 10 | 52% | | 52% |
+| 10% | 12 | 51% | 59% | 50% |
+| 25% | 18 | 48% | 51% | 47% |
+| 50% | 36 | 39% | 35% | 43% |
+| 75% | 56 | 28% | 24% | 41% |
+
+- **Books get deeper but less trading gets done.** Depth rises sixfold, while the share of
+  need met falls by 24 points (interval 24 to 25). Better-informed traders all price near
+  the value and keep the $0.20 margin, so their orders rarely cross each other.
+- **Learning from prices makes this much worse.** With calibrated trust the book is deep
+  (62 to 78 shares) but only 16% to 25% of need is met: every trader prices off the same
+  mid-quote and keeps the same $0.20 margin, so buyers and sellers rarely meet. This
+  follows directly from the fixed margin and is a reason to revisit that rule.
 
 ### How fast prices take in news
 
@@ -182,6 +219,34 @@ the scheduled-news experiment (calibrated trust there is $0.46 at 0% to $0.25 at
   effect runs the other way. Whether traders learn from prices decides the sign of this
   result.
 
+### What decides whether better-informed traders speed news up
+
+`results/news_sign/` crosses fixed trust in prices, from heavy ($0.15) to light ($4.80)
+plus no learning, with 20- and 80-step orders (scheduled news, 30 seeds, 2,100 runs).
+The chart is `results/news_sign/news_sign.png`.
+
+- **Ten steps after news, the sign depends on both.** With 80-step orders, better-informed
+  traders speed news up when trust is $0.60 or heavier (+7 to +18 points at 75% against
+  0%) and slow it down when trust is $1.20 or lighter (−10 to −24). With 20-step orders
+  they speed it up down to $1.20 and make no clear difference beyond.
+- **Forty steps after news, they never slow it down.** With no learning the difference
+  is +5 points with an interval that includes zero for both lifetimes; with trust of $2.40
+  or heavier it is positive. The slowdown in the baseline is a delay of the first few dozen steps, caused by
+  stale long-lived quotes, not a lasting loss of information.
+
+### Robustness: a bigger market on fresh seeds
+
+`results/robustness/` reruns the scheduled-news market with 80 traders and 8,000 steps,
+shares up to 100% better informed, and seeds 100 to 129, which no other result uses.
+Calibrated trust is recomputed for this market.
+
+- **The main patterns hold.** Spreads narrow and need met falls at every step up in the
+  share; with no learning news is slower ten steps after it arrives (−21 points at 75%,
+  interval −24 to −18) and catches up by 40 steps; with calibrated trust the direction
+  reverses (+7 points at 10 steps, +27 at 40).
+- **One finding does not hold up.** In the bigger market mid-quote error stops falling
+  after 50% better informed ($0.16 to $0.17 from 50% to 100%), instead of falling at every step.
+
 Read all of this as properties of this model. The intervals measure variation across
 seeds under one configuration; they say nothing about whether the assumptions below are
 right.
@@ -192,7 +257,7 @@ Requires Python 3.12 or newer.
 
 ```
 python -m pip install -e ".[dev]"   # numpy, pandas, scipy, matplotlib and pytest
-python -m pytest                    # all checks (98 tests, about 11 seconds)
+python -m pytest                    # all checks (109 tests, about 14 seconds)
 python -m marketsim.dashboard       # the demo, at http://127.0.0.1:8000
 python -m marketsim.example         # the first hand-worked case, step by step
 python -m marketsim.run --seed 1 --informed-share 0.25 --trace-step 1
@@ -201,15 +266,18 @@ python -m marketsim.experiment      # regenerates results/informed_share (about 
 python -m marketsim.experiment --design scheduled_news   # regenerates results/scheduled_news
 python -m marketsim.experiment --check   # regenerates and compares with the saved results
 python -m marketsim.experiment --check --out results/scheduled_news
+python -m marketsim.experiment --design robustness       # results/robustness
+python -m marketsim.experiment --design news_sign        # results/news_sign
+python -m marketsim.calibrate --check                    # trust calibration still holds
 python -m marketsim.benchmark       # times a fixed workload
 ```
 
-`marketsim.experiment` rewrites the tables and charts in `results/informed_share/`, or in
-`results/scheduled_news/` for the designed news experiment. The saved results were made with Python 3.13 and the library versions in
+`marketsim.experiment` rewrites the tables and charts of one design in `results/<design>/`. The saved results were made with Python 3.13 and the library versions in
 `requirements-tested.txt`.
 
 On every push GitHub installs the project on a clean machine, runs the tests and the
-worked example, and runs both `--check` commands. It does this on Python 3.12 and 3.13 with
+worked example, regenerates all four saved experiments and compares them with the saved
+tables, and reruns the trust calibration. It does this on Python 3.12 and 3.13 with
 the newest libraries and once more with the exact tested versions
 (`.github/workflows/tests.yml`).
 
@@ -313,7 +381,8 @@ The buyer ends with $30.00 and two shares, the seller with $20.00 and three shar
 | `marketsim/simulation.py` | The one runner used by the command line, the experiment and the dashboard |
 | `marketsim/metrics.py` | Per-run measures |
 | `marketsim/news.py` | The news event study: how much of a value change prices reflect, step by step |
-| `marketsim/experiment.py`, `charts.py` | The paired informed-share experiment and its charts |
+| `marketsim/experiment.py`, `charts.py` | The four saved experiments (designs) and their charts |
+| `marketsim/calibrate.py` | Calibrated trust in prices: the self-consistent `price_sd` at each share |
 | `marketsim/run.py`, `storage.py` | Run one market, trace a decision, export a run |
 | `marketsim/dashboard.py`, `dashboard.html` | The local demo: a small server and one page |
 | `marketsim/benchmark.py` | Times a fixed workload |

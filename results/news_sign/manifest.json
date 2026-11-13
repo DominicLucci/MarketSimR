@@ -1,0 +1,143 @@
+{
+  "command": "python -m marketsim.experiment --design news_sign --seeds 30",
+  "design": "news_sign",
+  "model_version": "0.2.0-pilot",
+  "base_config": {
+    "n_traders": 40,
+    "initial_cash": 100000,
+    "initial_shares": 10,
+    "n_steps": 4000,
+    "initial_value": 10000.0,
+    "news_prob": 0.02,
+    "news_sigma": 0.005,
+    "news_every": 100,
+    "cancel_on_news": false,
+    "sigma_informed": 10.0,
+    "sigma_uninformed": 100.0,
+    "margin": 20.0,
+    "learn_from_prices": false,
+    "price_sd": 30.0,
+    "max_need": 5,
+    "max_order_size": 5,
+    "order_lifetime": 80,
+    "quote_sample_every": 10
+  },
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29
+  ],
+  "informed_shares": [
+    0.0,
+    0.1,
+    0.25,
+    0.5,
+    0.75
+  ],
+  "variants": {
+    "trust15_life20": {
+      "learn_from_prices": true,
+      "price_sd": 15.0,
+      "order_lifetime": 20
+    },
+    "trust30_life20": {
+      "learn_from_prices": true,
+      "price_sd": 30.0,
+      "order_lifetime": 20
+    },
+    "trust60_life20": {
+      "learn_from_prices": true,
+      "price_sd": 60.0,
+      "order_lifetime": 20
+    },
+    "trust120_life20": {
+      "learn_from_prices": true,
+      "price_sd": 120.0,
+      "order_lifetime": 20
+    },
+    "trust240_life20": {
+      "learn_from_prices": true,
+      "price_sd": 240.0,
+      "order_lifetime": 20
+    },
+    "trust480_life20": {
+      "learn_from_prices": true,
+      "price_sd": 480.0,
+      "order_lifetime": 20
+    },
+    "no_learning_life20": {
+      "order_lifetime": 20
+    },
+    "trust15_life80": {
+      "learn_from_prices": true,
+      "price_sd": 15.0,
+      "order_lifetime": 80
+    },
+    "trust30_life80": {
+      "learn_from_prices": true,
+      "price_sd": 30.0,
+      "order_lifetime": 80
+    },
+    "trust60_life80": {
+      "learn_from_prices": true,
+      "price_sd": 60.0,
+      "order_lifetime": 80
+    },
+    "trust120_life80": {
+      "learn_from_prices": true,
+      "price_sd": 120.0,
+      "order_lifetime": 80
+    },
+    "trust240_life80": {
+      "learn_from_prices": true,
+      "price_sd": 240.0,
+      "order_lifetime": 80
+    },
+    "trust480_life80": {
+      "learn_from_prices": true,
+      "price_sd": 480.0,
+      "order_lifetime": 80
+    },
+    "no_learning_life80": {
+      "order_lifetime": 80
+    }
+  },
+  "runs": {
+    "grid": 2100,
+    "control": 25
+  },
+  "unit_of_analysis": "seed; 95% t-interval of within-seed differences from the 0% baseline",
+  "environment": {
+    "python": "3.13.18",
+    "numpy": "2.5.3",
+    "pandas": "3.0.5",
+    "scipy": "1.18.1"
+  }
+}

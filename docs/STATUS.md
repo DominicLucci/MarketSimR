@@ -3,7 +3,7 @@
 Updated at the end of each build session so the next session has a verifiable place to
 pick up.
 
-## Where things stand (after session 6, 2026-11-13)
+## Where things stand (after session 7, 2026-11-13)
 
 | Handoff week | What exists | State |
 | --- | --- | --- |
@@ -14,6 +14,45 @@ pick up.
 | 6 | Benchmark, README, automatic checks on a clean machine | Done; README numbers are pilot numbers |
 
 `main` holds everything. GitHub runs the checks on every push.
+
+## Session 7 (2026-11-13)
+
+### Built
+
+- **Three measures** in `marketsim/metrics.py`: `depth_near_mid` (shares within $0.50 of
+  the mid-quote, recorded on the quote clock as `depth_samples`), price impact split into
+  `impact_immediate` and `impact_later` at the end of the trade's own step, and `need_met`
+  (share of each arrival's inventory gap that its order fills, overall and by group).
+- **Designs can set their own shares, first seed and length** (`shares`, `first_seed`,
+  `base.n_steps` in `DESIGNS`); `--steps` now defaults to the design's own.
+- **`results/robustness/`**: scheduled news, 80 traders, 8,000 steps, shares 0% to 100%,
+  seeds 100 to 129; variants `main` and `learn_calibrated` (recalibrated for this market).
+- **`results/news_sign/`**: fixed trust $0.15 to $4.80 plus no learning, crossed with 20-
+  and 80-step orders; chart `news_sign.png`.
+- GitHub's checks now regenerate all four experiments and rerun three calibrations.
+
+### Checks run
+
+- `python -m pytest`: 109 passed. All four experiment `--check` and all three calibration
+  `--check` commands pass.
+- Every earlier column of `runs.csv` and every earlier measure in the other tables is
+  unchanged in both original experiments.
+- Depth checked against a book rebuilt independently from the event log at every sample;
+  impact split and need met checked on hand-worked cases.
+- News-sign chart rendered and looked at; the no-learning point separated from the trust
+  line.
+
+### What changed in the findings
+
+- Price impact is mostly mechanical: at 0%, $0.48 of $0.51 happens on the trade's own step.
+  The later part rises from $0.02 to $0.20 at 75% and is the part to read as information.
+- Need met falls from 52% to 28% between 0% and 75% while depth rises sixfold. With
+  learning from prices only 16% to 25% is met: the fixed $0.20 margin around a shared
+  mid-quote stops orders crossing. The margin rule deserves review.
+- The news slowdown is a short-horizon effect of stale long-lived quotes with little or no
+  trust in prices. At 40 steps better-informed traders never slow news down.
+- Robustness (bigger market, fresh seeds): patterns hold, except that mid-quote error stops
+  falling after 50% better informed.
 
 ## Session 6 (2026-11-13)
 
@@ -220,10 +259,10 @@ Tooling:
 ## Next unfinished milestone
 
 1. Dominic reviews the behavioural assumptions in `docs/model_rules.md` section 8 and
-   decides the baseline. The main open choice is now learning from prices: off, or on with
-   calibrated trust. It decides the sign of the news-speed result.
+   decides the baseline: learning from prices off or calibrated; and now also whether the
+   fixed $0.20 margin should stay, since it stops trade when traders share an estimate.
 2. Freeze the configuration and bump `MODEL_VERSION`.
-3. Depth within a few ticks of the mid-quote, and a price-impact measure net of the
-   mechanical effect of removing the best quote.
+3. Theory benchmark: a Glosten–Milgrom dealer case whose spread can be checked against
+   the formula.
 4. Show the new measures in the dashboard.
 5. Read and cite sources.

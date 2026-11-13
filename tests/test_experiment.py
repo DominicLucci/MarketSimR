@@ -94,3 +94,31 @@ def test_scheduled_news_design_runs_and_verifies(tmp_path):
     runs = pd.read_csv(out / "runs.csv")
     assert len(runs) == 5 * 2 * len(SHARES) and runs["news_events"].max() == 5  # news at 100..500
     assert check_results(out) == []
+
+
+def test_a_design_with_its_own_shares_and_seeds(tmp_path, monkeypatch):
+    from marketsim import experiment
+
+    monkeypatch.setitem(
+        experiment.DESIGNS, "tiny",
+        {"out": "unused", "base": {"n_steps": 200, "n_traders": 20}, "shares": (0.0, 0.5, 1.0), "first_seed": 50,
+         "variants": {"main": {}}},
+    )
+    out = run_experiment(SimConfig(n_steps=200, n_traders=20), 2, tmp_path / "tiny", chart=False, design="tiny")
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["seeds"] == [50, 51] and manifest["informed_shares"] == [0.0, 0.5, 1.0]
+    assert "--steps" not in manifest["command"]  # 200 is the design's own length
+    runs = pd.read_csv(out / "runs.csv")
+    assert sorted(runs["informed_share"].unique()) == [0.0, 0.5, 1.0] and sorted(runs["seed"].unique()) == [50, 51]
+    paired = pd.read_csv(out / "paired_differences.csv")
+    assert sorted(paired["informed_share"].unique()) == [0.5, 1.0]
+    assert check_results(out) == []
+
+
+def test_news_sign_design_covers_every_trust_level_and_lifetime():
+    from marketsim.experiment import DESIGNS, NEWS_SIGN_LIFETIMES, NEWS_SIGN_TRUST
+
+    variants = DESIGNS["news_sign"]["variants"]
+    assert len(variants) == (len(NEWS_SIGN_TRUST) + 1) * len(NEWS_SIGN_LIFETIMES)
+    assert variants["trust60_life20"] == {"learn_from_prices": True, "price_sd": 60.0, "order_lifetime": 20}
+    assert variants["no_learning_life80"] == {"order_lifetime": 80}

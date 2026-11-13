@@ -136,7 +136,10 @@ def outcomes_chart(runs: pd.DataFrame, levels: pd.DataFrame, path: str | Path) -
 
 
 # Informed share is an ordered quantity, so it gets one hue from light to dark.
-SHARE_RAMP = ((0.0, "#86b6ef"), (0.10, "#5598e7"), (0.25, "#2a78d6"), (0.50, "#1c5cab"), (0.75, "#0d366b"))
+SHARE_RAMP = (
+    (0.0, "#86b6ef"), (0.10, "#5598e7"), (0.25, "#2a78d6"), (0.50, "#1c5cab"),
+    (0.75, "#0d366b"), (0.90, "#092852"), (1.0, "#051a38"),
+)
 
 
 def news_chart(news: pd.DataFrame, n_seeds: int, path: str | Path, subtitle: str | None = None) -> None:
@@ -170,7 +173,8 @@ def news_chart(news: pd.DataFrame, n_seeds: int, path: str | Path, subtitle: str
         ax.tick_params(colors=TEXT_MUTED, labelsize=9, length=0)
         ax.axhline(1.0, color=AXIS, linewidth=1)
         rows = news[(news["variant"] == variant) & (news["series"] == "in_mid")]
-        for share, color in SHARE_RAMP:
+        present = set(news["informed_share"].round(9))
+        for share, color in [(s, c) for s, c in SHARE_RAMP if round(s, 9) in present]:
             line = rows[(rows["informed_share"] - share).abs() < 1e-9].sort_values("steps_after_news")
             ax.plot(line["steps_after_news"], line["mean"], color=color, linewidth=2, solid_capstyle="round",
                     label=f"{share:.0%} better informed")
@@ -197,5 +201,43 @@ def news_chart(news: pd.DataFrame, n_seeds: int, path: str | Path, subtitle: str
     )
     top = 0.965 if n_rows == 1 else 0.915
     fig.tight_layout(rect=(0, 0, 1, top), w_pad=2.0, h_pad=2.0)
+    fig.savefig(path, dpi=160, facecolor=SURFACE)
+    plt.close(fig)
+
+
+def news_sign_chart(paired: pd.DataFrame, n_seeds: int, path: str | Path) -> None:
+    """Effect of a 75% better-informed share on news speed, against how much traders trust
+    prices. Positive: better-informed traders speed news up. One line per order lifetime."""
+    from .experiment import NEWS_SIGN_LIFETIMES, NEWS_SIGN_TRUST
+
+    fig, axes = plt.subplots(1, 2, figsize=(12.5, 5.0), facecolor=SURFACE, sharey=True)
+    positions = list(range(len(NEWS_SIGN_TRUST) + 1))
+    labels = [f"${t / 100:.2f}" for t in NEWS_SIGN_TRUST] + ["no\nlearning"]
+    for ax, horizon in zip(axes, (10, 40)):
+        _style(ax)
+        ax.axhline(0.0, color=AXIS, linewidth=1)
+        for life, color in zip(NEWS_SIGN_LIFETIMES, (ORANGE, BLUE)):
+            names = [f"trust{t}_life{life}" for t in NEWS_SIGN_TRUST] + [f"no_learning_life{life}"]
+            rows = paired[(paired["measure"] == f"news_in_mid_{horizon}") & ((paired["informed_share"] - 0.75).abs() < 1e-9)]
+            rows = rows.set_index("variant").loc[names]
+            trust, alone = rows.iloc[:-1], rows.iloc[-1:]  # no learning is a limit, not the next level
+            _line(ax, positions[:-1], trust["mean_difference"], color, f"orders rest up to {life} steps",
+                  trust["ci_low"], trust["ci_high"])
+            ax.vlines(positions[-1:], alone["ci_low"], alone["ci_high"], color=color, linewidth=2)
+            ax.plot(positions[-1:], alone["mean_difference"], "o", color=color, markersize=7.5,
+                    markeredgecolor=SURFACE, markeredgewidth=1.6, zorder=3)
+        ax.set_xticks(positions)
+        ax.set_xticklabels(labels)
+        ax.set_xlim(-0.4, positions[-1] + 0.4)
+        ax.axvline(positions[-1] - 0.5, color=GRID, linewidth=1, linestyle=(0, (2, 3)))
+        ax.yaxis.set_major_formatter(lambda value, _: f"{value * 100:+.0f} pts")
+        ax.set_xlabel("how far off traders believe the mid-quote is (more trust on the left)", color=TEXT_SECONDARY, fontsize=9)
+        _titles(ax, f"{horizon} steps after news", "share of news in the mid-quote: 75% better informed minus 0%")
+    axes[0].legend(frameon=False, fontsize=9, labelcolor=TEXT_SECONDARY, loc="upper right")
+    fig.suptitle("Do better-informed traders speed news up or slow it down?", x=0.012, y=0.985, ha="left",
+                 color=TEXT, fontsize=14, fontweight="bold")
+    fig.text(0.012, 0.915, f"Mean and 95% interval over {n_seeds} seeds, paired within seed. Above zero: faster with "
+             "more better-informed traders. Scheduled news, 0.5% every 100 steps.", color=TEXT_SECONDARY, fontsize=10, va="top")
+    fig.tight_layout(rect=(0, 0, 1, 0.9), w_pad=2.0)
     fig.savefig(path, dpi=160, facecolor=SURFACE)
     plt.close(fig)

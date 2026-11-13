@@ -1,0 +1,106 @@
+{
+  "command": "python -m marketsim.experiment --design robustness --seeds 30",
+  "design": "robustness",
+  "model_version": "0.2.0-pilot",
+  "base_config": {
+    "n_traders": 80,
+    "initial_cash": 100000,
+    "initial_shares": 10,
+    "n_steps": 8000,
+    "initial_value": 10000.0,
+    "news_prob": 0.02,
+    "news_sigma": 0.005,
+    "news_every": 100,
+    "cancel_on_news": false,
+    "sigma_informed": 10.0,
+    "sigma_uninformed": 100.0,
+    "margin": 20.0,
+    "learn_from_prices": false,
+    "price_sd": 30.0,
+    "max_need": 5,
+    "max_order_size": 5,
+    "order_lifetime": 80,
+    "quote_sample_every": 10
+  },
+  "seeds": [
+    100,
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109,
+    110,
+    111,
+    112,
+    113,
+    114,
+    115,
+    116,
+    117,
+    118,
+    119,
+    120,
+    121,
+    122,
+    123,
+    124,
+    125,
+    126,
+    127,
+    128,
+    129
+  ],
+  "informed_shares": [
+    0.0,
+    0.1,
+    0.25,
+    0.5,
+    0.75,
+    0.9,
+    1.0
+  ],
+  "variants": {
+    "main": {},
+    "learn_calibrated": {
+      "learn_from_prices": true,
+      "by_share": {
+        "0.0": {
+          "price_sd": 48.2
+        },
+        "0.1": {
+          "price_sd": 45.5
+        },
+        "0.25": {
+          "price_sd": 41.5
+        },
+        "0.5": {
+          "price_sd": 33.9
+        },
+        "0.75": {
+          "price_sd": 28.0
+        },
+        "0.9": {
+          "price_sd": 25.5
+        },
+        "1.0": {
+          "price_sd": 24.1
+        }
+      }
+    }
+  },
+  "runs": {
+    "grid": 420,
+    "control": 35
+  },
+  "unit_of_analysis": "seed; 95% t-interval of within-seed differences from the 0% baseline",
+  "environment": {
+    "python": "3.13.18",
+    "numpy": "2.5.3",
+    "pandas": "3.0.5",
+    "scipy": "1.18.1"
+  }
+}
