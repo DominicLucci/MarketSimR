@@ -66,7 +66,7 @@ def test_experiment_writes_a_complete_and_repeatable_result(tmp_path):
     assert main.equals(narrow)
 
     manifest = json.loads((first / "manifest.json").read_text())
-    assert manifest["runs"] == {"grid": 40, "control": 10} and manifest["seeds"] == [0, 1]
+    assert manifest["runs"] == {"grid": len(VARIANTS) * 2 * len(SHARES), "control": 10} and manifest["seeds"] == [0, 1]
     assert manifest["base_config"]["n_steps"] == 300
     assert json.loads((first / "control.json").read_text())["identical_within_every_seed"] is True
 
@@ -90,7 +90,7 @@ def test_scheduled_news_design_runs_and_verifies(tmp_path):
     assert (out / "news_response.png").exists() and not (out / "market_measures.png").exists()
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["design"] == "scheduled_news" and manifest["base_config"]["news_every"] == 100
-    assert set(manifest["variants"]) == {"main", "short_lived_orders", "pull_on_news", "learn_from_prices"}
+    assert set(manifest["variants"]) == {"main", "short_lived_orders", "pull_on_news", "learn_from_prices", "learn_calibrated"}
     runs = pd.read_csv(out / "runs.csv")
-    assert len(runs) == 4 * 2 * len(SHARES) and runs["news_events"].max() == 5  # news at 100..500
+    assert len(runs) == 5 * 2 * len(SHARES) and runs["news_events"].max() == 5  # news at 100..500
     assert check_results(out) == []

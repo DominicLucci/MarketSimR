@@ -138,31 +138,49 @@ taken in. The half-life is the number of steps until half is reflected.
 
 In the baseline a trader ignores what quotes imply. With `learn_from_prices` on, its
 estimate is a weighted average of its own signal and the mid-quote it sees, with more
-weight on the price the noisier its own signal is. Traders believe the mid-quote is
-typically $0.30 from the value. A less-informed trader then puts about 92% of the weight
-on the price and a better-informed one about 10%.
+weight on the price the noisier its own signal is. How much weight depends on `price_sd`,
+how far from the value traders believe the mid-quote typically is. Two versions:
 
-| Better-informed share | Mid-quote error, baseline | With learning | Volume, baseline | With learning | News reflected after 40 steps, baseline | With learning |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 0% | $0.44 | $0.78 | 3,543 | 206 | 87% | 9% |
-| 10% | $0.36 | $0.70 | 3,461 | 317 | 92% | 13% |
-| 25% | $0.26 | $0.59 | 3,248 | 494 | 92% | 19% |
-| 50% | $0.17 | $0.32 | 2,616 | 863 | 92% | 42% |
-| 75% | $0.15 | $0.21 | 1,888 | 1,016 | 92% | 65% |
+- **Fixed trust:** traders believe $0.30 at every share. A less-informed trader then puts
+  about 92% of the weight on the price, a better-informed one about 10%.
+- **Calibrated trust** (`learn_calibrated`): at each share, `price_sd` is set to the
+  root-mean-square mid-quote error that the market produces when everyone holds that
+  belief, so the belief is correct. `python -m marketsim.calibrate` finds it by bisection
+  on seeds 1000 to 1019, kept apart from the experiment's seeds 0 to 29. On the experiment
+  seeds the belief is within 5% of the error actually produced (2% with scheduled news).
 
-Mid-quote error and volume come from the main experiment; the news column comes from the
-scheduled-news experiment.
+| Better-informed share | Calibrated trust | Mid-quote error: baseline | fixed trust | calibrated | Volume: baseline | fixed trust | calibrated |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0% | $0.53 | $0.44 | $0.78 | $0.41 | 3,543 | 206 | 1,686 |
+| 10% | $0.50 | $0.36 | $0.70 | $0.39 | 3,461 | 317 | 1,526 |
+| 25% | $0.46 | $0.26 | $0.59 | $0.34 | 3,248 | 494 | 1,343 |
+| 50% | $0.40 | $0.17 | $0.32 | $0.27 | 2,617 | 863 | 1,126 |
+| 75% | $0.35 | $0.15 | $0.21 | $0.21 | 1,888 | 1,016 | 1,052 |
 
-- **Prices anchor on themselves.** When most traders copy the price, the price mostly
-  follows its own past. Quotes are tight ($0.11 to $0.14 spread) but less accurate than in
-  the baseline at every share, and trading nearly stops when nobody is well informed.
-- **Better-informed traders now speed news up.** After 40 steps the mid-quote reflects 9%
-  of a value change with no better-informed traders and 65% at a 75% share (difference
-  +55 points, 95% interval +54 to +57). In the baseline the early effect ran the other way.
-- **This is one fixed level of trust, and it is too high at low shares.** Traders assume
-  the price is within about $0.30 of the value when it is actually $0.59 to $0.78 away at
-  shares up to 25%. Much of the damage comes from that mismatch. A version where trust
-  matches how accurate prices really are at each share has not been built.
+From the main experiment. News reflected in the mid-quote 40 steps after it arrives, from
+the scheduled-news experiment (calibrated trust there is $0.46 at 0% to $0.25 at 75%):
+
+| Better-informed share | Baseline | Fixed trust | Calibrated trust |
+| ---: | ---: | ---: | ---: |
+| 0% | 87% | 9% | 22% |
+| 10% | 92% | 13% | 24% |
+| 25% | 92% | 19% | 31% |
+| 50% | 92% | 42% | 43% |
+| 75% | 92% | 65% | 61% |
+
+- **Prices anchor on themselves.** When most traders lean on the price, the price mostly
+  follows its own past. Quotes are tight ($0.08 to $0.14 spread in both versions) and news
+  gets in slowly.
+- **Most of the fixed-trust damage was the mismatch.** With calibrated trust, mid-quote
+  error at low shares falls from $0.78 to $0.41 and volume recovers to about half the
+  baseline. With nobody better informed, learning now makes prices slightly more accurate
+  than the baseline. With any better-informed traders present it still makes them less
+  accurate.
+- **The news reversal is not an artefact of the mismatch.** With calibrated trust,
+  better-informed traders still speed news up: after 40 steps 22% is reflected at 0% and
+  61% at 75% (difference +39 points, 95% interval +37 to +40). In the baseline the early
+  effect runs the other way. Whether traders learn from prices decides the sign of this
+  result.
 
 Read all of this as properties of this model. The intervals measure variation across
 seeds under one configuration; they say nothing about whether the assumptions below are
@@ -264,8 +282,9 @@ The buyer ends with $30.00 and two shares, the seller with $20.00 and three shar
 
 - **Traders do not learn from prices in the baseline.** Less-informed traders act on their
   own noisy signal and ignore what the quotes imply, so they lose on average and keep
-  trading. The `learn_from_prices` option lets them lean on the mid-quote with a fixed
-  level of trust; it changes the results sharply (see above).
+  trading. The `learn_from_prices` option lets them lean on the mid-quote, with trust
+  either fixed or calibrated to the accuracy prices actually have; either way it changes
+  the results sharply (see above).
 - **Inventory need decides side and size, never price.** Equally informed traders with
   opposite needs mostly do not trade with each other.
 - **Nobody takes a position beyond its inventory target,** so better-informed traders

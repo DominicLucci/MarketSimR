@@ -27,6 +27,10 @@ jobs:
         run: |
           python -m marketsim.experiment --check
           python -m marketsim.experiment --check --out results/scheduled_news
+      - name: Rerun the trust calibration and compare with the stored values
+        run: |
+          python -m marketsim.calibrate --check
+          python -m marketsim.calibrate --check --design scheduled_news
 
   tested-versions:
     name: Python 3.13, the exact versions the results were made with

@@ -14,7 +14,11 @@ Three parts:
 1. main                the configured gap in signal precision
 2. narrow_gap          sensitivity: the better-informed error is 5x larger (a smaller gap)
 3. short_lived_orders  sensitivity: resting orders expire after 20 steps instead of 80
-4. control             equal information for both groups; relabelling must change nothing
+4. learn_from_prices   traders blend signal and mid-quote, trusting prices at a fixed $0.30
+5. learn_calibrated    the same, with trust calibrated at each share (marketsim/calibrate.py)
+6. control             equal information for both groups; relabelling must change nothing
+
+A variant's settings may include "by_share": {share: {...}}, applied only at that share.
 """
 
 from __future__ import annotations
@@ -40,11 +44,25 @@ from .simulation import run_simulation
 
 SHARES = (0.0, 0.10, 0.25, 0.50, 0.75)
 BASELINE_SHARE = 0.0
+# Trust in prices (price_sd, ticks) at which the mid-quote error the market produces equals
+# the error traders assume, found by `python -m marketsim.calibrate [--design ...]` on seeds
+# 1000..1019. Rerun that command with --check after any change to the model.
+CALIBRATED_PRICE_SD: dict[str, dict[float, float]] = {
+    "informed_share": {0.0: 53.2, 0.10: 50.3, 0.25: 46.4, 0.50: 40.1, 0.75: 34.7},
+    "scheduled_news": {0.0: 45.7, 0.10: 42.8, 0.25: 39.0, 0.50: 31.0, 0.75: 24.7},
+}
+
+
+def calibrated(design: str) -> dict[str, object]:
+    return {"learn_from_prices": True, "by_share": {s: {"price_sd": v} for s, v in CALIBRATED_PRICE_SD[design].items()}}
+
+
 VARIANTS: dict[str, dict[str, Any]] = {
     "main": {},
     "narrow_gap": {"sigma_informed": 50.0},
     "short_lived_orders": {"order_lifetime": 20},
     "learn_from_prices": {"learn_from_prices": True},
+    "learn_calibrated": calibrated("informed_share"),
 }
 # Measures that exist at every share, compared with the 0% baseline within a seed.
 MARKET_MEASURES = (
@@ -80,6 +98,7 @@ DESIGNS: dict[str, dict[str, Any]] = {
             "short_lived_orders": {"order_lifetime": 20},
             "pull_on_news": {"cancel_on_news": True},
             "learn_from_prices": {"learn_from_prices": True},
+            "learn_calibrated": calibrated("scheduled_news"),
         },
     },
 }
@@ -107,10 +126,14 @@ def run_grid(base: SimConfig, seeds: list[int], variants: dict[str, dict[str, An
     (one row per run and number of steps after news).
     """
     rows, curves = [], []
-    for variant, overrides in variants.items():
+    for variant, settings in variants.items():
+        overrides = {k: v for k, v in settings.items() if k != "by_share"}
+        by_share = settings.get("by_share", {})
+        if "by_share" in settings and set(by_share) != set(SHARES):
+            raise ValueError(f"variant {variant}: per-share settings must cover every share {SHARES}")
         for seed in seeds:
             for share in SHARES:
-                config = base.with_(seed=seed, informed_share=share, **overrides)
+                config = base.with_(seed=seed, informed_share=share, **overrides, **by_share.get(share, {}))
                 result = run_simulation(config)
                 row = {"variant": variant, **summarize(result)}
                 informed, others = row["trading_gain_informed"], row["trading_gain_uninformed"]

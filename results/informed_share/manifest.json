@@ -71,10 +71,30 @@
     },
     "learn_from_prices": {
       "learn_from_prices": true
+    },
+    "learn_calibrated": {
+      "learn_from_prices": true,
+      "by_share": {
+        "0.0": {
+          "price_sd": 53.2
+        },
+        "0.1": {
+          "price_sd": 50.3
+        },
+        "0.25": {
+          "price_sd": 46.4
+        },
+        "0.5": {
+          "price_sd": 40.1
+        },
+        "0.75": {
+          "price_sd": 34.7
+        }
+      }
     }
   },
   "runs": {
-    "grid": 600,
+    "grid": 750,
     "control": 25
   },
   "unit_of_analysis": "seed; 95% t-interval of within-seed differences from the 0% baseline",

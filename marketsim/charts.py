@@ -146,15 +146,20 @@ def news_chart(news: pd.DataFrame, n_seeds: int, path: str | Path, subtitle: str
         "main": "Orders rest up to 80 steps (main)",
         "short_lived_orders": "Orders rest up to 20 steps",
         "pull_on_news": "Quotes pulled when news arrives",
-        "learn_from_prices": "Traders learn from prices",
+        "learn_from_prices": "Traders learn from prices, fixed trust",
+        "learn_calibrated": "Traders learn from prices, calibrated trust",
     }
     panels = [(variant, title) for variant, title in titles.items() if variant in set(news["variant"])]
     if "pull_on_news" not in set(news["variant"]):  # the main experiment keeps its two-panel chart
         panels = panels[:2]
-    columns = 2 if len(panels) in (2, 4) else len(panels)
+    columns = 2 if len(panels) in (2, 4) else 3 if len(panels) > 4 else len(panels)
     n_rows = -(-len(panels) // columns)
     fig, grid = plt.subplots(n_rows, columns, figsize=(6.25 * columns, 4.6 * n_rows + 0.4), facecolor=SURFACE, sharey=True, squeeze=False)
     axes = list(grid.flat)
+    spare = axes[len(panels):]  # empty slots when the panels do not fill the grid
+    axes = axes[: len(panels)]
+    for ax in spare:
+        ax.set_axis_off()
     for ax, (variant, title) in zip(axes, panels):
         ax.set_facecolor(SURFACE)
         for side in ("top", "right", "left"):
@@ -177,7 +182,11 @@ def news_chart(news: pd.DataFrame, n_seeds: int, path: str | Path, subtitle: str
         _titles(ax, title, "share of the value change reflected in the mid-quote")
     axes[0].text(40, 1.015, "all of the news", color=TEXT_MUTED, fontsize=9, ha="right", va="bottom")
     legend_at = "lower right" if n_rows == 1 else "upper left"  # wherever the last panel has no lines
-    axes[-1].legend(frameon=False, fontsize=9, labelcolor=TEXT_SECONDARY, loc=legend_at, handlelength=1.6)
+    if spare:
+        handles, labels = axes[-1].get_legend_handles_labels()
+        spare[0].legend(handles, labels, frameon=False, fontsize=10, labelcolor=TEXT_SECONDARY, loc="center", handlelength=1.6)
+    else:
+        axes[-1].legend(frameon=False, fontsize=9, labelcolor=TEXT_SECONDARY, loc=legend_at, handlelength=1.6)
     fig.suptitle("How fast quotes take in news", x=0.012, y=0.985, ha="left", color=TEXT, fontsize=14, fontweight="bold")
     fig.text(
         0.012, 0.925 if n_rows == 1 else 0.955,

@@ -111,8 +111,12 @@ decision from its inputs to its fills.
 - **Traders do not learn from prices.** (Option: `learn_from_prices = True` replaces the
   signal by `(1 - w) x signal + w x mid-quote` with `w = signal_sd^2 / (signal_sd^2 +
   price_sd^2)`, where `price_sd`, $0.30 by default, is how far off traders believe the
-  mid-quote typically is. With no two-sided quote the signal is used alone. The trust is
-  fixed and is not matched to how accurate prices actually are.) In the baseline a
+  mid-quote typically is. With no two-sided quote the signal is used alone. The
+  `learn_calibrated` variant instead sets `price_sd` at each informed share to the
+  root-mean-square mid-quote error the market then produces, found by bisection in
+  `marketsim/calibrate.py` on seeds 1000 to 1019; the values are stored in
+  `CALIBRATED_PRICE_SD` in `marketsim/experiment.py`. Every trader shares one belief about
+  price accuracy, and the belief does not change during a run.) In the baseline a
   less-informed trader treats its own noisy
   signal as its estimate and ignores what the quotes imply. Every trade is zero-sum on a
   common value, so the less-informed group loses on average and keeps trading anyway. This

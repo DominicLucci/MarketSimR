@@ -3,7 +3,7 @@
 Updated at the end of each build session so the next session has a verifiable place to
 pick up.
 
-## Where things stand (after session 5, 2026-11-12)
+## Where things stand (after session 6, 2026-11-13)
 
 | Handoff week | What exists | State |
 | --- | --- | --- |
@@ -14,6 +14,45 @@ pick up.
 | 6 | Benchmark, README, automatic checks on a clean machine | Done; README numbers are pilot numbers |
 
 `main` holds everything. GitHub runs the checks on every push.
+
+## Session 6 (2026-11-13)
+
+### Built
+
+- **Calibrated trust** (`marketsim/calibrate.py`): at each informed share, finds the
+  `price_sd` at which the root-mean-square mid-quote error the market produces equals the
+  error traders assume. Bisection on f(s) - s over $0.10 to $2.00, because f falls with a
+  slope near -1 at low shares and plain substitution would oscillate. Seeds 1000 to 1019,
+  disjoint from the experiment's 0 to 29. `--check` reruns the search and compares with
+  the stored values.
+- **Per-share settings in experiment variants** (`"by_share"`), which must cover every
+  share. Stored values in `CALIBRATED_PRICE_SD` in `marketsim/experiment.py`.
+- **New variant `learn_calibrated`** in both experiments (750 runs each now).
+  Scheduled-news chart is now five panels.
+- GitHub's checks now also rerun the calibration for both designs.
+
+### Checks run
+
+- `python -m pytest`: 104 passed. Both experiment `--check` commands pass; both
+  calibration `--check` commands pass.
+- Every earlier row of every saved table is byte-for-byte unchanged; only rows for the new
+  variant were added. Control unchanged.
+- Calibration scanned first on a 10-point grid to confirm a single crossing at every
+  share in both designs.
+- Out of sample: on seeds 0 to 29, the produced error is within 5% of the calibrated
+  trust (random news) and within 2% (scheduled news).
+- Five-panel news chart rendered and looked at.
+
+### What changed in the findings
+
+- Calibrated trust: $0.53 at 0% falling to $0.35 at 75% (random news); $0.46 to $0.25
+  (scheduled news). The fixed $0.30 was too high at low shares and slightly too low at 75%.
+- Most of the fixed-trust damage was the mismatch: at 0% mid-quote error falls from $0.78
+  to $0.41 (baseline $0.44) and volume recovers from 206 to 1,686 (baseline 3,543).
+  Learning still makes prices less accurate than the baseline at every share above 0%.
+- The news reversal survives calibration: after 40 steps 22% reflected at 0%, 61% at 75%
+  (difference +39 points, 95% interval +37 to +40). Whether traders learn from prices
+  decides the sign of the news-speed result.
 
 ## Session 5 (2026-11-12)
 
@@ -180,11 +219,11 @@ Tooling:
 
 ## Next unfinished milestone
 
-1. Dominic reviews the four behavioural assumptions in `docs/model_rules.md` section 8.
-   The newest one, that resting orders are never refreshed, now visibly drives a result.
-2. Calibrated trust: choose `price_sd` at each informed share so it equals the mid-quote
-   error the market then produces (iterate to a fixed point). This is the self-consistent
-   version of learning from prices.
+1. Dominic reviews the behavioural assumptions in `docs/model_rules.md` section 8 and
+   decides the baseline. The main open choice is now learning from prices: off, or on with
+   calibrated trust. It decides the sign of the news-speed result.
+2. Freeze the configuration and bump `MODEL_VERSION`.
 3. Depth within a few ticks of the mid-quote, and a price-impact measure net of the
    mechanical effect of removing the best quote.
 4. Show the new measures in the dashboard.
+5. Read and cite sources.
