@@ -247,6 +247,28 @@ Calibrated trust is recomputed for this market.
 - **One finding does not hold up.** In the bigger market mid-quote error stops falling
   after 50% better informed ($0.16 to $0.17 from 50% to 100%), instead of falling at every step.
 
+### Theory benchmark: Glosten and Milgrom (1985)
+
+To check the exchange and the way spreads are measured against a known answer,
+`marketsim/glosten_milgrom.py` runs the textbook dealer market on the same exchange. The
+value is $99 or $101; each arriving trader is informed with chance μ; a dealer account
+quotes the Bayesian bid and ask, rounded outward to whole ticks, and every trade goes
+through the normal order entry and matching. The exact expected spread at every step is
+computed separately from the formulas (and checked a second way by recursion in the tests).
+
+| Informed share μ | First spread: formula | quoted | Mean spread over 60 trades: simulated | exact | Dealer profit per trade: simulated | exact |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 10% | $0.20 | $0.20 | 16.35¢ | 16.34¢ | 0.32¢ | 0.39¢ |
+| 25% | $0.50 | $0.50 | 17.73¢ | 17.65¢ | 0.42¢ | 0.41¢ |
+| 50% | $1.00 | $1.00 | 10.17¢ | 10.26¢ | 0.26¢ | 0.28¢ |
+
+10,000 runs per μ. Every simulated mean is within 1.7 standard errors of the exact value.
+The dealer's small profit comes only from rounding to whole ticks; without rounding it
+would break even, as the theory says. Chart: `results/glosten_milgrom/spread_by_step.png`.
+
+This checks the machinery, not the main model's traders: in the main model nobody plays
+the dealer's role.
+
 Read all of this as properties of this model. The intervals measure variation across
 seeds under one configuration; they say nothing about whether the assumptions below are
 right.
@@ -257,7 +279,7 @@ Requires Python 3.12 or newer.
 
 ```
 python -m pip install -e ".[dev]"   # numpy, pandas, scipy, matplotlib and pytest
-python -m pytest                    # all checks (109 tests, about 14 seconds)
+python -m pytest                    # all checks (116 tests, about 15 seconds)
 python -m marketsim.dashboard       # the demo, at http://127.0.0.1:8000
 python -m marketsim.example         # the first hand-worked case, step by step
 python -m marketsim.run --seed 1 --informed-share 0.25 --trace-step 1
@@ -269,6 +291,7 @@ python -m marketsim.experiment --check --out results/scheduled_news
 python -m marketsim.experiment --design robustness       # results/robustness
 python -m marketsim.experiment --design news_sign        # results/news_sign
 python -m marketsim.calibrate --check                    # trust calibration still holds
+python -m marketsim.glosten_milgrom                      # theory benchmark, results/glosten_milgrom
 python -m marketsim.benchmark       # times a fixed workload
 ```
 
@@ -276,8 +299,8 @@ python -m marketsim.benchmark       # times a fixed workload
 `requirements-tested.txt`.
 
 On every push GitHub installs the project on a clean machine, runs the tests and the
-worked example, regenerates all four saved experiments and compares them with the saved
-tables, and reruns the trust calibration. It does this on Python 3.12 and 3.13 with
+worked example, regenerates all four saved experiments and the theory benchmark and
+compares them with the saved tables, and reruns the trust calibration. It does this on Python 3.12 and 3.13 with
 the newest libraries and once more with the exact tested versions
 (`.github/workflows/tests.yml`).
 
@@ -382,6 +405,7 @@ The buyer ends with $30.00 and two shares, the seller with $20.00 and three shar
 | `marketsim/metrics.py` | Per-run measures |
 | `marketsim/news.py` | The news event study: how much of a value change prices reflect, step by step |
 | `marketsim/experiment.py`, `charts.py` | The four saved experiments (designs) and their charts |
+| `marketsim/glosten_milgrom.py` | Theory benchmark: the Glosten–Milgrom dealer market on the exchange |
 | `marketsim/calibrate.py` | Calibrated trust in prices: the self-consistent `price_sd` at each share |
 | `marketsim/run.py`, `storage.py` | Run one market, trace a decision, export a run |
 | `marketsim/dashboard.py`, `dashboard.html` | The local demo: a small server and one page |
@@ -390,7 +414,10 @@ The buyer ends with $30.00 and two shares, the seller with $20.00 and three shar
 
 ## Sources
 
-No source has been used yet to motivate or calibrate the model, so none is cited. Papers
+Glosten, L. R. and Milgrom, P. R. (1985), "Bid, ask and transaction prices in a
+specialist market with heterogeneously informed traders," *Journal of Financial
+Economics* 14(1), 71–100: the benchmark above follows its model. No source has yet been
+used to motivate or calibrate the main model. Papers
 that bear directly on the assumptions above and are worth reading before the model is
 revised: Glosten and Milgrom (1985) and Kyle (1985) on trading against better-informed
 counterparties; Gode and Sunder (1993) on markets of traders with minimal intelligence;

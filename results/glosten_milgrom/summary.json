@@ -1,0 +1,77 @@
+{
+  "command": "python -m marketsim.glosten_milgrom --seeds 10000",
+  "settings": {
+    "mu": [
+      0.1,
+      0.25,
+      0.5
+    ],
+    "v_low": 9900,
+    "v_high": 10100,
+    "n_steps": 60,
+    "seed": 0,
+    "seeds": 10000
+  },
+  "by_mu": {
+    "0.1": {
+      "first_spread_formula": 20.0,
+      "first_spread_quoted": 20.0,
+      "mean_spread_over_steps": {
+        "sim": 16.34615,
+        "exact": 16.33919176843639,
+        "difference": 0.006958231563611861,
+        "se": 0.031308217493857884,
+        "z": 0.2222493683959153
+      },
+      "dealer_profit_per_trade": {
+        "sim": 0.3203466666666666,
+        "exact": 0.3857645210706557,
+        "difference": -0.06541785440398906,
+        "se": 0.08975866356684634,
+        "z": -0.728819389732448
+      },
+      "abs_mid_error_first_step": 100.0,
+      "abs_mid_error_last_step": 60.61255
+    },
+    "0.25": {
+      "first_spread_formula": 50.0,
+      "first_spread_quoted": 50.0,
+      "mean_spread_over_steps": {
+        "sim": 17.726435000000002,
+        "exact": 17.648533924856892,
+        "difference": 0.07790107514311018,
+        "se": 0.09532867130017551,
+        "z": 0.8171841071592356
+      },
+      "dealer_profit_per_trade": {
+        "sim": 0.4182783333333333,
+        "exact": 0.4131979680002649,
+        "difference": 0.005080365333068382,
+        "se": 0.036137418755830736,
+        "z": 0.1405846213697449
+      },
+      "abs_mid_error_first_step": 100.0,
+      "abs_mid_error_last_step": 8.01125
+    },
+    "0.5": {
+      "first_spread_formula": 100.0,
+      "first_spread_quoted": 100.0,
+      "mean_spread_over_steps": {
+        "sim": 10.165636666666666,
+        "exact": 10.25684128812427,
+        "difference": -0.09120462145760477,
+        "se": 0.05676665879172517,
+        "z": -1.6066582638275622
+      },
+      "dealer_profit_per_trade": {
+        "sim": 0.25944833333333334,
+        "exact": 0.28361772996864437,
+        "difference": -0.024169396635311036,
+        "se": 0.014852003250209083,
+        "z": -1.6273492691951024
+      },
+      "abs_mid_error_first_step": 100.0,
+      "abs_mid_error_last_step": 0.50115
+    }
+  }
+}

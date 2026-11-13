@@ -29,6 +29,7 @@ jobs:
           python -m marketsim.experiment --check --out results/scheduled_news
           python -m marketsim.experiment --check --out results/robustness
           python -m marketsim.experiment --check --out results/news_sign
+          python -m marketsim.glosten_milgrom --check
       - name: Rerun the trust calibration and compare with the stored values
         run: |
           python -m marketsim.calibrate --check
@@ -50,3 +51,4 @@ jobs:
       - run: python -m marketsim.experiment --check --out results/scheduled_news
       - run: python -m marketsim.experiment --check --out results/robustness
       - run: python -m marketsim.experiment --check --out results/news_sign
+      - run: python -m marketsim.glosten_milgrom --check

@@ -29,12 +29,20 @@ pick up.
   seeds 100 to 129; variants `main` and `learn_calibrated` (recalibrated for this market).
 - **`results/news_sign/`**: fixed trust $0.15 to $4.80 plus no learning, crossed with 20-
   and 80-step orders; chart `news_sign.png`.
-- GitHub's checks now regenerate all four experiments and rerun three calibrations.
+- **Theory benchmark** (`marketsim/glosten_milgrom.py`, `results/glosten_milgrom/`): the
+  Glosten–Milgrom dealer market on the exchange, 3 informed shares x 10,000 runs x 60
+  trades, against the exact expected spread and dealer profit at every step.
+- GitHub's checks now regenerate all four experiments and the benchmark and rerun three
+  calibrations.
 
 ### Checks run
 
-- `python -m pytest`: 109 passed. All four experiment `--check` and all three calibration
-  `--check` commands pass.
+- `python -m pytest`: 116 passed. All four experiment `--check`, the benchmark `--check`
+  and all three calibration `--check` commands pass.
+- Benchmark: first spread equals the formula exactly at every share; mean spread and dealer
+  profit within 1.7 standard errors of exact. A 2.25-SE gap at 2,000 runs was chased down
+  (exact values confirmed by an independent recursion, pure Monte Carlo agrees) and is
+  sampling noise; the saved benchmark uses 10,000 runs.
 - Every earlier column of `runs.csv` and every earlier measure in the other tables is
   unchanged in both original experiments.
 - Depth checked against a book rebuilt independently from the event log at every sample;
@@ -262,7 +270,7 @@ Tooling:
    decides the baseline: learning from prices off or calibrated; and now also whether the
    fixed $0.20 margin should stay, since it stops trade when traders share an estimate.
 2. Freeze the configuration and bump `MODEL_VERSION`.
-3. Theory benchmark: a Glosten–Milgrom dealer case whose spread can be checked against
-   the formula.
+3. Second benchmark aimed at the main model's measures: a Glosten–Milgrom run summarized
+   with `metrics.summarize`, so the spread decomposition is checked against theory too.
 4. Show the new measures in the dashboard.
 5. Read and cite sources.
