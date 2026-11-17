@@ -3,7 +3,7 @@
 Updated at the end of each build session so the next session has a verifiable place to
 pick up.
 
-## Where things stand (after session 8, 2026-11-17)
+## Where things stand (after session 9, 2026-11-17)
 
 | Handoff week | What exists | State |
 | --- | --- | --- |
@@ -15,6 +15,42 @@ pick up.
 
 `main` holds everything. GitHub runs the checks on every push. The last pilot commit is
 `1430ebb` (`git checkout 1430ebb` to see the pilot code and results).
+
+## Session 9 (2026-11-17)
+
+### Built
+
+- **Spread decomposition checked against theory.** The Glosten–Milgrom benchmark now hands
+  its runs to `metrics.spread_decomposition`, the main model's own code, and
+  `exact_decomposition` computes the exact expected effective spread, price impact (own
+  step and after) and realized spread for the same trades. The dealer requotes straight
+  after each trade, as in the theory; the quotes each trader sees are unchanged.
+  `results/glosten_milgrom/decomposition.csv`; `--check` compares it too.
+- **Sources** (`docs/sources.md`): 14 papers with citations checked against library and
+  publisher records, each related to the model's results; a table of where the model
+  agrees and differs. README links to it.
+
+### Checks run
+
+- Exact expected effective spread equals the exact expected quoted spread at every step
+  (to 1e-14), as it must when every trade is at the dealer's quote.
+- All 15 simulated-against-exact comparisons (5 measures x 3 informed shares, 10,000 runs
+  each) within 1.8 standard errors. `spread_by_step.csv` byte-for-byte unchanged.
+- `python -m pytest`: 128 passed; `python -m marketsim.glosten_milgrom --check` passes.
+- Tests added: the identity above, parts adding up, the run handed to the measures in the
+  right form, measured against exact on 1,500 runs.
+- Every citation's journal, volume, issue and pages confirmed in at least one library or
+  publisher record; one claim in the sources document was reworded because the model does
+  not measure it.
+
+### What it shows
+
+- In the dealer market the spread is 92% to 95% price impact; the dealer keeps 5% to 8%,
+  mostly from rounding to ticks. Nearly all impact is on the trade's own step because the
+  dealer requotes at once, the opposite of the main model.
+- Against the literature: the spread narrowing as the informed share rises agrees with
+  limit-order theory (Roşu, 2020) and is the opposite of the dealer model; impact after the
+  trade rising with the informed share differs from Roşu (2020).
 
 ## Session 8 (2026-11-17)
 
@@ -325,7 +361,7 @@ Tooling:
 
 ## Not done
 
-- No source has been read or cited to motivate the main model.
+- The sources were checked through their abstracts; none has been read in full.
 - In the main (random news) experiment the news measures are noisy, with about 14 usable
   events per run. Use `results/scheduled_news/` for news-speed claims.
 - The dashboard does not show the newer measures (depth, impact split, need met) and has
@@ -342,11 +378,13 @@ update the README numbers.
 
 ## Next unfinished milestone
 
-1. Dominic reads the frozen-baseline results and the decisions in `docs/model_rules.md`
-   section 8; any decision can still be reversed.
-2. Benchmark aimed at the main model's measures: a Glosten–Milgrom run summarized with
-   `metrics.summarize`, so the spread decomposition is checked against theory too.
-3. Show the newer measures in the dashboard.
-4. Read and cite sources.
+1. Dominic reads the frozen-baseline results, the decisions in `docs/model_rules.md`
+   section 8 and the comparison in `docs/sources.md`; any decision can still be reversed.
+2. Write-up: question, model, results organized by mechanism, robustness, benchmark,
+   relation to the literature, limitations. Its form depends on who it is for.
+3. Show the newer measures in the dashboard, with a switch between the baseline and its
+   variants; replace the pilot-era screenshot.
+4. Look into the one disagreement with the literature: impact after the trade rising with
+   the informed share, where Roşu (2020) finds no effect.
 5. First extension: better-informed traders who trade beyond their need when their edge
    is large (a variant, with its own calibration).

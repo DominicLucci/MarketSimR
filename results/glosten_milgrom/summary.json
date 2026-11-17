@@ -10,7 +10,8 @@
     "v_high": 10100,
     "n_steps": 60,
     "seed": 0,
-    "seeds": 10000
+    "seeds": 10000,
+    "impact_horizon": 10
   },
   "by_mu": {
     "0.1": {

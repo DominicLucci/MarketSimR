@@ -32,12 +32,15 @@ import tempfile
 from dataclasses import asdict, dataclass
 from math import ceil, comb, floor
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 
 from .events import Side, Trade
 from .exchange import Exchange
+from .metrics import IMPACT_HORIZON, spread_decomposition
+from .parallel import pmap
 
 OUT = "results/glosten_milgrom"
 MUS = (0.10, 0.25, 0.50)
@@ -99,9 +102,14 @@ def exact_path(config: GMConfig) -> pd.DataFrame:
 DEALER = 0
 
 
-def simulate(config: GMConfig) -> pd.DataFrame:
-    """One run on the exchange. One row per step: quotes before the trade, the trade, and
-    the dealer's profit on it valued at the true value."""
+def simulate_run(config: GMConfig) -> tuple[pd.DataFrame, SimpleNamespace]:
+    """One run on the exchange.
+
+    Returns one row per step (quotes before the trade, the trade, and the dealer's profit
+    on it valued at the true value), and the run in the form the main model's measures read:
+    the event log, the quotes each arriving trader saw, and the mid-quote at the end of each
+    step. As in the theory, the dealer requotes as soon as a trade has updated its belief,
+    so the book is two-sided at the end of every step."""
     rng = np.random.default_rng(config.seed)
     value = config.v_high if rng.random() < 0.5 else config.v_low
     exchange = Exchange()
@@ -110,15 +118,21 @@ def simulate(config: GMConfig) -> pd.DataFrame:
     for trader in range(1, n_traders + 1):
         exchange.open_account(trader, 10**9, 10**6)
 
-    net_buys, rows = 0, []
-    for t in range(config.n_steps):
-        exchange.advance_to(t)
+    def requote(net_buys: int) -> None:
         for order in exchange.open_orders(DEALER):
             exchange.cancel(DEALER, order.order_id)
         bid, ask = quotes(belief_after(net_buys, config.mu), config)
         exchange.submit_limit(DEALER, Side.BUY, bid, 1)
         exchange.submit_limit(DEALER, Side.SELL, ask, 1)
+
+    net_buys, rows, seen_quotes = 0, [], []
+    mid_path = np.full(config.n_steps, np.nan)
+    exchange.advance_to(0)
+    requote(net_buys)
+    for t in range(config.n_steps):
+        exchange.advance_to(t)
         seen = exchange.quotes()
+        bid, ask = seen.best_bid, seen.best_ask
 
         informed = rng.random() < config.mu
         coin = rng.random() < 0.5
@@ -131,21 +145,80 @@ def simulate(config: GMConfig) -> pd.DataFrame:
             raise RuntimeError(f"step {t}: expected exactly one one-share trade with the dealer")
         price = trades[0].price
         net_buys += 1 if buys else -1
+        requote(net_buys)
+        mid_path[t] = exchange.quotes().mid
+        seen_quotes.append({"best_bid": bid, "best_ask": ask})
         rows.append(
             {
-                "seed": config.seed, "step": t, "value": value, "bid": seen.best_bid, "ask": seen.best_ask,
+                "seed": config.seed, "step": t, "value": value, "bid": bid, "ask": ask,
                 "spread": seen.spread, "mid": seen.mid, "trade_price": price, "buy": buys,
                 "dealer_profit": (price - value) if buys else (value - price),
             }
         )
+    run = SimpleNamespace(events=exchange.events, decisions=seen_quotes, mid_path=mid_path)
+    return pd.DataFrame(rows), run
+
+
+def simulate(config: GMConfig) -> pd.DataFrame:
+    """One run on the exchange, one row per step (see simulate_run)."""
+    return simulate_run(config)[0]
+
+
+DECOMPOSITION = ("effective_spread", "price_impact", "impact_immediate", "impact_later", "realized_spread")
+
+
+def exact_decomposition(config: GMConfig) -> pd.DataFrame:
+    """Expected effective spread, price impact (own step and after) and realized spread of
+    the trade at each step, exactly as metrics.spread_decomposition measures them: m0 is
+    the mid-quote the trader saw, ma the mid-quote at the end of its step, m1 the mid-quote
+    IMPACT_HORIZON steps later. Only steps with a later mid-quote are included, as there.
+
+    Before step t the net buys n are 2 x buys - t with buys binomial; the trade moves them
+    to n + d; the IMPACT_HORIZON trades after it add 2k - IMPACT_HORIZON, k binomial again.
+    Summed exactly over both values, so rounding and the dealer's one-tick floor are in."""
+    mu, horizon = config.mu, IMPACT_HORIZON
+    mids: dict[int, float] = {}
+
+    def mid(n: int) -> float:
+        if n not in mids:
+            bid, ask = quotes(belief_after(n, mu), config)
+            mids[n] = (bid + ask) / 2
+        return mids[n]
+
+    rows = []
+    for t in range(config.n_steps - horizon):
+        effective = immediate = later = 0.0
+        for p_buy in ((1 + mu) / 2, (1 - mu) / 2):  # value high, value low
+            future = [comb(horizon, k) * p_buy**k * (1 - p_buy) ** (horizon - k) for k in range(horizon + 1)]
+            for buys in range(t + 1):
+                weight = 0.5 * comb(t, buys) * p_buy**buys * (1 - p_buy) ** (t - buys)
+                n = 2 * buys - t
+                bid, ask = quotes(belief_after(n, mu), config)
+                m0 = (bid + ask) / 2
+                for d, p_d, price in ((1, p_buy, ask), (-1, 1 - p_buy, bid)):
+                    m_after = mid(n + d)
+                    m_later = sum(f * mid(n + d + 2 * k - horizon) for k, f in enumerate(future))
+                    effective += weight * p_d * 2 * d * (price - m0)
+                    immediate += weight * p_d * 2 * d * (m_after - m0)
+                    later += weight * p_d * 2 * d * (m_later - m_after)
+        impact = immediate + later
+        rows.append({"step": t, "effective_spread": effective, "price_impact": impact, "impact_immediate": immediate,
+                     "impact_later": later, "realized_spread": effective - impact})
     return pd.DataFrame(rows)
 
 
-def run_benchmark(n_seeds: int, mus: tuple[float, ...] = MUS, n_steps: int = 60) -> tuple[pd.DataFrame, dict]:
-    """Mean over seeds at each step, beside the exact value, for each mu."""
-    tables, summary = [], {}
+def _one_seed(config: GMConfig) -> tuple[pd.DataFrame, dict]:
+    rows, run = simulate_run(config)
+    return rows, spread_decomposition(run)
+
+
+def run_benchmark(n_seeds: int, mus: tuple[float, ...] = MUS, n_steps: int = 60) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+    """For each mu: the mean over seeds at each step beside the exact value, and the main
+    model's spread decomposition averaged over seeds beside its exact expectation."""
+    tables, decompositions, summary = [], [], {}
     for mu in mus:
-        runs = pd.concat([simulate(GMConfig(mu=mu, n_steps=n_steps, seed=s)) for s in range(n_seeds)], ignore_index=True)
+        results = pmap(_one_seed, [GMConfig(mu=mu, n_steps=n_steps, seed=s) for s in range(n_seeds)])
+        runs = pd.concat([rows for rows, _ in results], ignore_index=True)
         runs["abs_mid_error"] = (runs["mid"] - runs["value"]).abs()
         by_step = runs.groupby("step").agg(
             sim_spread=("spread", "mean"), sim_spread_se=("spread", lambda x: x.std(ddof=1) / np.sqrt(len(x))),
@@ -161,10 +234,15 @@ def run_benchmark(n_seeds: int, mus: tuple[float, ...] = MUS, n_steps: int = 60)
         per_seed = runs.groupby("seed")[["spread", "dealer_profit"]].mean()
         pooled = {}
         for name, column, exact in (("spread", "spread", "exact_spread"), ("dealer_profit", "dealer_profit", "exact_dealer_profit")):
-            se = float(per_seed[column].std(ddof=1) / np.sqrt(n_seeds))
-            difference = float(per_seed[column].mean() - table[exact].mean())
-            pooled[name] = {"sim": float(per_seed[column].mean()), "exact": float(table[exact].mean()),
-                            "difference": difference, "se": se, "z": difference / se}
+            pooled[name] = _compare(per_seed[column], float(table[exact].mean()))
+        # The main model's measurement code on the same runs: each run's average over its
+        # trades, against the exact expectation of that average.
+        measured = pd.DataFrame([decomposition for _, decomposition in results])
+        exact = exact_decomposition(GMConfig(mu=mu, n_steps=n_steps))
+        if not (measured["n_trades_decomposed"] == len(exact)).all():
+            raise RuntimeError("every run should decompose the same trades as the exact calculation")
+        for measure in DECOMPOSITION:
+            decompositions.append({"mu": mu, "measure": measure, **_compare(measured[measure], float(exact[measure].mean()))})
         config = GMConfig(mu=mu)
         summary[str(mu)] = {
             "first_spread_formula": mu * (config.v_high - config.v_low),
@@ -176,10 +254,19 @@ def run_benchmark(n_seeds: int, mus: tuple[float, ...] = MUS, n_steps: int = 60)
         }
     meta = {
         "command": f"python -m marketsim.glosten_milgrom --seeds {n_seeds}",
-        "settings": {**asdict(GMConfig()), "mu": list(mus), "n_steps": n_steps, "seeds": n_seeds},
+        "settings": {**asdict(GMConfig()), "mu": list(mus), "n_steps": n_steps, "seeds": n_seeds,
+                     "impact_horizon": IMPACT_HORIZON},
         "by_mu": summary,
     }
-    return pd.concat(tables, ignore_index=True), meta
+    return pd.concat(tables, ignore_index=True), pd.DataFrame(decompositions), meta
+
+
+def _compare(per_seed: pd.Series, exact: float) -> dict[str, float]:
+    """Mean across seeds against an exact value, with the standard error across seeds."""
+    se = float(per_seed.std(ddof=1) / np.sqrt(len(per_seed)))
+    difference = float(per_seed.mean() - exact)
+    return {"sim": float(per_seed.mean()), "exact": exact, "difference": difference, "se": se,
+            "z": difference / se if se > 0 else float("nan")}
 
 
 def chart(table: pd.DataFrame, path: str | Path) -> None:
@@ -217,8 +304,9 @@ def chart(table: pd.DataFrame, path: str | Path) -> None:
 def write(out: str | Path, n_seeds: int, with_chart: bool = True) -> Path:
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
-    table, meta = run_benchmark(n_seeds)
+    table, decomposition, meta = run_benchmark(n_seeds)
     table.to_csv(out / "spread_by_step.csv", index=False)
+    decomposition.to_csv(out / "decomposition.csv", index=False)
     (out / "summary.json").write_text(json.dumps(meta, indent=2) + "\n")
     if with_chart:
         chart(table, out / "spread_by_step.png")
@@ -235,8 +323,9 @@ def main(argv: list[str] | None = None) -> None:
         saved = json.loads((Path(args.out) / "summary.json").read_text())
         with tempfile.TemporaryDirectory() as scratch:
             fresh = write(scratch, saved["settings"]["seeds"], with_chart=False)
-            pd.testing.assert_frame_equal(pd.read_csv(Path(args.out) / "spread_by_step.csv"),
-                                          pd.read_csv(fresh / "spread_by_step.csv"), check_exact=False, rtol=1e-9, atol=1e-9)
+            for name in ("spread_by_step.csv", "decomposition.csv"):
+                pd.testing.assert_frame_equal(pd.read_csv(Path(args.out) / name),
+                                              pd.read_csv(fresh / name), check_exact=False, rtol=1e-9, atol=1e-9)
         print(f"saved results in {args.out}/ match a fresh run")
         return
     out = write(args.out, args.seeds)
@@ -248,6 +337,11 @@ def main(argv: list[str] | None = None) -> None:
         print(f"{float(mu):<5} {s['first_spread_formula']:>20.1f} {s['first_spread_quoted']:>6.1f} |"
               f" {sp['sim']:>16.3f} {sp['exact']:>6.3f} {sp['z']:>+5.2f} |"
               f" {pr['sim']:>24.3f} {pr['exact']:>6.3f} {pr['z']:>+5.2f}")
+    decomposition = pd.read_csv(out / "decomposition.csv")
+    print("\nthe main model's spread decomposition on these runs: simulated, exact, z")
+    for mu, group in decomposition.groupby("mu"):
+        cells = "  ".join(f"{r.measure} {r.sim:6.2f} {r.exact:6.2f} {r.z:+5.2f}" for r in group.itertuples())
+        print(f"{mu:<5} {cells}")
     print(f"\nwrote {out}/")
 
 

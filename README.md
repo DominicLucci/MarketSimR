@@ -244,8 +244,26 @@ computed separately from the formulas (and checked a second way by recursion in 
 The dealer's small profit comes only from rounding to whole ticks; without rounding it
 would break even, as the theory says. Chart: `results/glosten_milgrom/spread_by_step.png`.
 
-This checks the machinery, not the main model's traders: in the main model nobody plays
-the dealer's role.
+The same runs also go through the main model's own cost-of-trading code
+(`metrics.spread_decomposition`), against exact expectations computed separately for the
+first 50 trades of each run (those with a mid-quote 10 steps later):
+
+| Informed share μ | Effective spread: simulated | exact | Price impact: simulated | exact | Share of impact on the trade's own step | Realized spread: simulated | exact |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 10% | 16.92¢ | 16.92¢ | 16.13¢ | 16.09¢ | 100% | 0.79¢ | 0.83¢ |
+| 25% | 20.16¢ | 20.06¢ | 19.05¢ | 18.92¢ | 99% | 1.10¢ | 1.14¢ |
+| 50% | 12.00¢ | 12.11¢ | 11.09¢ | 11.16¢ | 90% | 0.91¢ | 0.94¢ |
+
+All 15 comparisons (including the two parts of impact) are within 1.8 standard errors.
+They show what the theory says: the spread is almost all price impact (92% to 95%), the
+cost of trading against better-informed traders. The dealer keeps 5% to 8%, most of it from
+rounding to whole ticks; the rest comes from measuring against the midpoint of its quotes
+rather than its own estimate. Because the dealer requotes at once, nearly all the impact
+happens on the trade's own step, the opposite of the main model, where information
+reaches quotes through later orders.
+
+This checks the machinery and the measures, not the main model's traders: in the main
+model nobody plays the dealer's role.
 
 Read all of this as properties of this model. The intervals measure variation across
 seeds under one configuration; they say nothing about whether the assumptions below are
@@ -257,7 +275,7 @@ Requires Python 3.12 or newer.
 
 ```
 python -m pip install -e ".[dev]"   # numpy, pandas, scipy, matplotlib and pytest
-python -m pytest                    # all checks (125 tests, about 20 seconds)
+python -m pytest                    # all checks (128 tests, about 30 seconds)
 python -m marketsim.dashboard       # the demo, at http://127.0.0.1:8000
 python -m marketsim.example         # the first hand-worked case, step by step
 python -m marketsim.run --seed 1 --informed-share 0.25 --trace-step 1
@@ -393,11 +411,11 @@ The buyer ends with $30.00 and two shares, the seller with $20.00 and three shar
 
 ## Sources
 
-Glosten, L. R. and Milgrom, P. R. (1985), "Bid, ask and transaction prices in a
-specialist market with heterogeneously informed traders," *Journal of Financial
-Economics* 14(1), 71–100: the benchmark above follows its model. No source has yet been
-used to calibrate the main model. Papers
-that bear directly on the assumptions above and are worth reading before the model is
-revised: Glosten and Milgrom (1985) and Kyle (1985) on trading against better-informed
-counterparties; Gode and Sunder (1993) on markets of traders with minimal intelligence;
-Goettler, Parlour and Rajan (2009) on informed traders in limit order markets.
+[docs/sources.md](docs/sources.md) lists the papers this model relates to, with checked
+citations and, for each, how the model's results compare. In short: prices getting more
+accurate and the gain per better-informed trader shrinking as their share grows echo
+Grossman and Stiglitz (1980); the spread narrowing as the informed share rises agrees with
+limit-order-market theory (Roşu, 2020) and is the opposite of the dealer model (Glosten and
+Milgrom, 1985), which the benchmark reproduces exactly; impact after the trade rising with
+the informed share differs from Roşu (2020). The papers were checked through their
+abstracts, not read in full.

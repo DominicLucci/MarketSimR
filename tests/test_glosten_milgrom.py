@@ -68,3 +68,40 @@ def test_check_passes_on_fresh_output(tmp_path, monkeypatch):
     monkeypatch.setattr(gm.run_benchmark, "__defaults__", ((0.25,), 20))
     out = gm.write(tmp_path / "gm", n_seeds=30, with_chart=False)
     gm.main(["--check", "--out", str(out)])
+
+
+def test_exact_effective_spread_equals_the_quoted_spread_and_parts_add_up():
+    # Every trade is at the dealer's quote, so 2d(p - m0) is the quoted spread whichever side
+    # trades: the exact decomposition must reproduce the exact quoted spread step by step.
+    for mu in (0.10, 0.25, 0.50):
+        config = gm.GMConfig(mu=mu, n_steps=30)
+        exact = gm.exact_decomposition(config)
+        assert len(exact) == 30 - gm.IMPACT_HORIZON
+        quoted = gm.exact_path(config)["exact_spread"].to_numpy()[: len(exact)]
+        assert exact["effective_spread"].to_numpy() == pytest.approx(quoted, abs=1e-9)
+        assert (exact["impact_immediate"] + exact["impact_later"]).to_numpy() == pytest.approx(exact["price_impact"].to_numpy())
+        assert (exact["effective_spread"] - exact["price_impact"]).to_numpy() == pytest.approx(exact["realized_spread"].to_numpy())
+
+
+def test_the_run_is_in_the_form_the_main_models_measures_read():
+    config = gm.GMConfig(mu=0.25, n_steps=40, seed=5)
+    rows, run = gm.simulate_run(config)
+    assert rows.equals(gm.simulate(config))
+    assert not np.isnan(run.mid_path).any()  # the dealer requotes at once: two-sided after every step
+    assert [d["best_bid"] for d in run.decisions] == rows["bid"].tolist()
+    from marketsim.metrics import spread_decomposition
+
+    measured = spread_decomposition(run)
+    assert measured["n_trades_decomposed"] == 40 - gm.IMPACT_HORIZON
+    assert measured["effective_spread"] == pytest.approx(rows["spread"][: 40 - gm.IMPACT_HORIZON].mean())
+
+
+def test_measured_decomposition_matches_its_exact_expectation():
+    config = gm.GMConfig(mu=0.5, n_steps=30)
+    measured = pd.DataFrame([gm._one_seed(gm.GMConfig(mu=0.5, n_steps=30, seed=s))[1] for s in range(1_500)])
+    exact = gm.exact_decomposition(config)
+    for measure in gm.DECOMPOSITION:
+        compared = gm._compare(measured[measure], float(exact[measure].mean()))
+        assert abs(compared["z"]) < 4, (measure, compared)
+    # Glosten-Milgrom: the spread is almost all price impact; the dealer keeps little.
+    assert exact["realized_spread"].mean() < 0.1 * exact["effective_spread"].mean()
