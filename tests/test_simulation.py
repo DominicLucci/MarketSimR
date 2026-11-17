@@ -258,3 +258,48 @@ def test_learning_option_keeps_the_controls_intact():
     altered = first.value_path.copy()
     altered[300:] *= 1.5
     assert [e for e in first.events if e.time < 300] == [e for e in run_simulation(learning, value_override=altered).events if e.time < 300]
+
+
+# ------------------------------------------------------------------- urgency margin
+
+
+def test_urgency_shrinks_the_margin_with_distance_from_target():
+    from marketsim.traders import effective_margin
+
+    assert effective_margin(20, 3, urgency_scale=0) == 20  # off: fixed margin
+    assert effective_margin(20, 3, urgency_scale=10) == pytest.approx(8.0)  # urgency 0.3: 20 x (1 - 0.6)
+    assert effective_margin(20, -5, urgency_scale=10) == pytest.approx(0.0)  # halfway: no cushion
+    assert effective_margin(20, 10, urgency_scale=10) == pytest.approx(-20.0)  # full: pays up to 20 over
+    assert effective_margin(20, -12, urgency_scale=10) == pytest.approx(-20.0)  # capped at full urgency
+
+
+def test_an_urgent_buyer_bids_above_its_estimate():
+    # Signal 10,000, gap +10, scale 10: margin -20, so it bids 10,020.
+    intent, _ = decide(view(signal=10_000.0, target=15, shares=5), margin=20, max_order_size=5, urgency_scale=10)
+    assert intent == Intent(Side.BUY, 10_020, 5)
+    # A seller 5 shares above target keeps no cushion: offers at its estimate, rounded up.
+    intent, _ = decide(view(signal=10_000.4, target=10, shares=15), margin=20, max_order_size=5, urgency_scale=10)
+    assert intent == Intent(Side.SELL, 10_001, 5)
+
+
+def test_agreeing_traders_cross_exactly_when_their_urgencies_reach_one():
+    for buyer_gap in range(1, 11):
+        for seller_gap in range(1, 11):
+            buy, _ = decide(view(signal=10_000.0, target=10 + buyer_gap, shares=10), 20, 5, urgency_scale=10)
+            sell, _ = decide(view(signal=10_000.0, target=10, shares=10 + seller_gap), 20, 5, urgency_scale=10)
+            assert (buy.price >= sell.price) == (buyer_gap + seller_gap >= 10), (buyer_gap, seller_gap)
+
+
+def test_urgency_option_keeps_the_controls_intact():
+    urgent = SMALL.with_(urgency_scale=10)
+    first = run_simulation(urgent, check_invariants=True)
+    assert first.events != run_simulation(SMALL).events
+    assert first.events == run_simulation(urgent).events
+    for d in first.decisions:
+        gap = d["target"] - d["shares"]
+        if gap:
+            assert d["margin"] == pytest.approx(20 * (1 - 2 * min(1, abs(gap) / 10)))
+    equal = urgent.with_(sigma_informed=60.0, sigma_uninformed=60.0)
+    assert run_simulation(equal.with_(informed_share=0.0)).events == run_simulation(equal.with_(informed_share=0.75)).events
+    with pytest.raises(ValueError, match="urgency_scale"):
+        SimConfig(urgency_scale=-1)

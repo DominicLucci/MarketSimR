@@ -1,5 +1,5 @@
 {
-  "description": "both groups get sigma_uninformed; event logs compared across informed shares",
+  "description": "both groups get sigma_uninformed and one trust in prices; event logs compared across informed shares",
   "seeds": [
     0,
     1,

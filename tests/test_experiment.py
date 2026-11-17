@@ -6,7 +6,11 @@ import pandas as pd
 import pytest
 
 from marketsim.config import SimConfig
-from marketsim.experiment import MARKET_MEASURES, SHARES, VARIANTS, check_results, mean_interval, paired_table, run_experiment
+from marketsim.experiment import (
+    DESIGNS, MARKET_MEASURES, SHARES, VARIANTS, check_results, mean_interval, paired_table, run_experiment,
+)
+
+SMALL_MAIN = SimConfig(n_steps=300, **DESIGNS["informed_share"]["base"])  # the baseline rules, short runs
 
 
 def test_mean_interval_matches_a_hand_calculation():
@@ -46,7 +50,7 @@ def test_paired_table_differences_within_seed_not_across():
 
 
 def test_experiment_writes_a_complete_and_repeatable_result(tmp_path):
-    base = SimConfig(n_steps=300)
+    base = SMALL_MAIN
     first = run_experiment(base, 2, tmp_path / "a", chart=True)
     second = run_experiment(base, 2, tmp_path / "b", chart=False)
 
@@ -59,7 +63,8 @@ def test_experiment_writes_a_complete_and_repeatable_result(tmp_path):
 
     runs = pd.read_csv(first / "runs.csv")
     assert len(runs) == len(VARIANTS) * 2 * len(SHARES)
-    # The 0% baseline is the same market in the two precision variants: nobody has the better signal.
+    # The 0% baseline is the same market in the two precision variants: nobody has the better
+    # signal, so even their separately calibrated trust is the same.
     baseline = runs[runs["informed_share"] == 0.0]
     main = baseline[baseline["variant"] == "main"].drop(columns="variant").reset_index(drop=True)
     narrow = baseline[baseline["variant"] == "narrow_gap"].drop(columns="variant").reset_index(drop=True)
@@ -72,7 +77,7 @@ def test_experiment_writes_a_complete_and_repeatable_result(tmp_path):
 
 
 def test_check_passes_on_untouched_results_and_catches_a_changed_number(tmp_path):
-    saved = run_experiment(SimConfig(n_steps=300), 2, tmp_path / "saved", chart=False)
+    saved = run_experiment(SMALL_MAIN, 2, tmp_path / "saved", chart=False)
     assert check_results(saved) == []
 
     runs = pd.read_csv(saved / "runs.csv")
@@ -83,14 +88,13 @@ def test_check_passes_on_untouched_results_and_catches_a_changed_number(tmp_path
 
 
 def test_scheduled_news_design_runs_and_verifies(tmp_path):
-    from marketsim.experiment import DESIGNS
-
     base = SimConfig(n_steps=600, **DESIGNS["scheduled_news"]["base"])
     out = run_experiment(base, 2, tmp_path / "news", chart=True, design="scheduled_news")
     assert (out / "news_response.png").exists() and not (out / "market_measures.png").exists()
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["design"] == "scheduled_news" and manifest["base_config"]["news_every"] == 100
-    assert set(manifest["variants"]) == {"main", "short_lived_orders", "pull_on_news", "learn_from_prices", "learn_calibrated"}
+    assert set(manifest["variants"]) == {"main", "no_learning", "fixed_margin", "short_lived_orders", "pull_on_news"}
+    assert manifest["base_config"]["learn_from_prices"] is True and manifest["base_config"]["urgency_scale"] == 10
     runs = pd.read_csv(out / "runs.csv")
     assert len(runs) == 5 * 2 * len(SHARES) and runs["news_events"].max() == 5  # news at 100..500
     assert check_results(out) == []
@@ -120,5 +124,6 @@ def test_news_sign_design_covers_every_trust_level_and_lifetime():
 
     variants = DESIGNS["news_sign"]["variants"]
     assert len(variants) == (len(NEWS_SIGN_TRUST) + 1) * len(NEWS_SIGN_LIFETIMES)
-    assert variants["trust60_life20"] == {"learn_from_prices": True, "price_sd": 60.0, "order_lifetime": 20}
-    assert variants["no_learning_life80"] == {"order_lifetime": 80}
+    assert variants["trust60_life20"] == {"price_sd": 60.0, "order_lifetime": 20}  # learning comes from the base
+    assert variants["no_learning_life80"] == {"learn_from_prices": False, "order_lifetime": 80}
+    assert DESIGNS["news_sign"]["base"]["learn_from_prices"] is True

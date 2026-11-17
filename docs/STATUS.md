@@ -3,17 +3,83 @@
 Updated at the end of each build session so the next session has a verifiable place to
 pick up.
 
-## Where things stand (after session 7, 2026-11-13)
+## Where things stand (after session 8, 2026-11-17)
 
 | Handoff week | What exists | State |
 | --- | --- | --- |
 | 1 and 2 | Exchange engine: clock, price-time matching, reservations, settlement, partial fills, cancellation, expiry, event log, invariant checks, replay | Done and tested |
-| 3 | Market model: underlying value with discrete news, private signals, inventory needs, two trader groups, one shared runner, decision trace, export | Runs and is tested; configuration is a pilot |
-| 4 | Informed-share experiment: 5 shares x 30 seeds paired within seed, two sensitivity variants (450 grid runs), equal-information control (25 runs), tables and charts from one command | Done as a pilot result |
-| 5 | Local dashboard on the shared runner, with same-seed comparison preset and export | Done and tested in a browser |
-| 6 | Benchmark, README, automatic checks on a clean machine | Done; README numbers are pilot numbers |
+| 3 | Market model: value with discrete news, private signals, inventory needs, two trader groups, learning from prices with calibrated trust, urgency margin, one shared runner, decision trace, export | Frozen as model 1.0.0 |
+| 4 | Experiments: informed share (900 grid runs), scheduled news (750), robustness (420), news-sign map (2,100), each with an equal-information control; Glosten–Milgrom benchmark | Final results for model 1.0.0 |
+| 5 | Local dashboard on the shared runner, running the frozen baseline | Done and tested; does not show the newer measures |
+| 6 | Benchmark, README, automatic checks on a clean machine | Done; README numbers are model 1.0.0 results |
 
-`main` holds everything. GitHub runs the checks on every push.
+`main` holds everything. GitHub runs the checks on every push. The pilot is at git tag
+`pilot-0.2.0`.
+
+## Session 8 (2026-11-17)
+
+Dominic asked the build agent to take its recommended option for each open choice. The
+recommendations, and the evidence for each, are in `docs/model_rules.md` section 8.
+
+### Built
+
+- **Urgency margin** (`urgency_scale` in `SimConfig`, `effective_margin` in
+  `marketsim/traders.py`): margin x (1 - 2 x min(1, |gap| / scale)). Off by default; 10 in
+  the baseline. Two traders with the same estimate cross exactly when their urgencies add up
+  to at least one.
+- **The frozen baseline** (`BASELINE` in `marketsim/experiment.py`): learning from prices
+  with calibrated trust, urgency scale 10. `MODEL_VERSION` is `1.0.0`. `baseline_config(share)`
+  builds it; the dashboard and `marketsim.run` use it (`--pilot-rules` for the old rule).
+- **Variants that change one rule each:** `no_learning`, `fixed_margin` (the pilot margin),
+  `strong_urgency` (scale 5), `narrow_gap`, `short_lived_orders`, `pull_on_news`.
+- **Calibrated trust for every variant that learns,** stored in
+  `marketsim/calibrated_trust.json` with its model version (11 variant tables across three
+  designs). `python -m marketsim.calibrate --design D [--write | --check]`. An experiment
+  refuses to run if the table is for another model version, and a variant that learns
+  must state its trust, so the default `price_sd` is never used by accident.
+- **Runs spread over processor cores** (`marketsim/parallel.py`); results are identical to
+  a plain loop. `MARKETSIM_JOBS=1` turns it off.
+- All four experiments rerun under the baseline; README results, model rules and charts
+  rewritten. News-sign chart shades the range of the baseline's calibrated trust.
+- GitHub: calibration checks moved to three parallel jobs, one per design.
+
+### Checks run
+
+- Before adopting the urgency margin, an exploratory comparison on separate seeds
+  (2000 to 2009): full urgency at 5 shares restored trade but roughly doubled mid-quote
+  error at high shares; at 10 shares trade was restored with accuracy about unchanged.
+  Hence the scale of 10, with 5 kept as a variant.
+- `fixed_margin` (learning, calibrated, fixed margin) reproduces the pilot's calibrated
+  trust exactly in both designs, so the new per-variant calibration code agrees with the
+  old one on the old rule.
+- Calibrated trust is self-consistent: in every table the error it produces is within
+  1 tick of the trust.
+- Tests added: urgency margin by hand, the crossing property for all 100 pairs of gaps,
+  urgency keeps replay, group-neutrality and equal-information controls; resolved trust,
+  stale-table refusal, trust required when learning, store/void of the table, parallel
+  equals sequential; dashboard and command line run the baseline.
+- `python -m pytest`: 125 passed. All four experiment `--check` commands and the benchmark
+  `--check` pass.
+- `python -m marketsim.calibrate --design scheduled_news --check` passes (fresh search
+  matches every stored value). Every equal-information control passes.
+- Every number in the new README results checked against the saved tables; four
+  mis-rounded cells and one wrong sentence (about the fixed margin's accuracy) corrected.
+- All charts rendered and looked at; one legend moved off a line.
+
+### What the frozen baseline shows
+
+- Prices get more accurate at every step up in the better-informed share (mid-quote error
+  $0.43 to $0.18; to $0.15 at 100% in the larger market). Learning from prices helps most
+  when few traders know much.
+- More than half of inventory need is met at every share (58% to 56%); with the pilot's
+  fixed margin and learning only 15% to 25%.
+- With learning, news gets into prices slowly (47% after 40 steps at 0%) and
+  better-informed traders speed it up (+33 points at 75%, interval +29 to +36).
+- Without learning the informed share makes little difference to news speed (a small early
+  slowdown, significant only in the larger market). The pilot's clear early slowdown
+  depended on the fixed margin.
+- Better-informed traders gain at the others' expense: $24 each at 10%, $5.50 each at 75%;
+  each other trader loses more as their number grows ($2.67 to $16.50).
 
 ## Session 7 (2026-11-13)
 
@@ -230,7 +296,7 @@ random streams x 200 commands; eight planted engine bugs each caught; exact repl
 information-access check; equal-information control; dashboard numbers equal to the batch
 runner's; fresh clone runs every README command.
 
-## Choices made without Dominic, to confirm or change
+## Choices made by the build agent
 
 Engine:
 
@@ -239,12 +305,14 @@ Engine:
 - Self-trade rule: an order that would cross the trader's own resting order is rejected.
 - Expiry convention: `expires_at = T` means gone at the start of step `T`.
 
-Market model (all in `marketsim/config.py`, reasoning in `docs/model_rules.md` 7 and 8):
+Market model (frozen in model 1.0.0 on Dominic's instruction to take the recommended option
+for each choice; reasoning in `docs/model_rules.md` 7 and 8):
 
 - Value process: 2% chance of news per step, 0.5% log jump.
 - Signal error: $0.10 for the better informed, $1.00 for the others.
-- Decision rule: inventory need sets side and size; signal minus or plus a $0.20 margin
-  sets the price; traders do not learn from prices.
+- Decision rule: inventory need sets side and size; the estimate blends signal and
+  mid-quote with calibrated trust; the margin is $0.20 x (1 - 2 x urgency), urgency =
+  min(1, gap / 10).
 - One live order per trader, never refreshed between arrivals; 80-step order lifetime.
 - 4,000 steps, 40 traders.
 
@@ -253,24 +321,32 @@ Tooling:
 - Dashboard on Python's built-in web server with plain JavaScript and SVG, no framework.
 - 95% t-intervals across seeds (adds scipy as a dependency).
 - News event study uses only isolated events and a 40-step window.
+- Calibration seeds 1000 to 1019; trust rounded to 0.1 tick.
 
 ## Not done
 
-- **The configuration has not been frozen.** README numbers are pilot results. Bump
-  `MODEL_VERSION` in `marketsim/config.py` when a rule changes results.
-- No source has been read or cited to motivate the model.
+- No source has been read or cited to motivate the main model.
 - In the main (random news) experiment the news measures are noisy, with about 14 usable
   events per run. Use `results/scheduled_news/` for news-speed claims.
-- The dashboard does not show the new measures and has only been checked in headless
-  Chrome at desktop width.
+- The dashboard does not show the newer measures (depth, impact split, need met) and has
+  only been checked in headless Chrome at desktop width.
+- Better-informed traders never trade beyond their need; this is the main gap between the
+  model and the theory of informed trading.
+
+## Changing the model from here
+
+Any rule change that alters results: bump `MODEL_VERSION` in `marketsim/config.py`, run
+`python -m marketsim.calibrate --design D --write` for informed_share, scheduled_news and
+robustness (about 20 minutes on two cores), then regenerate all four experiments and
+update the README numbers.
 
 ## Next unfinished milestone
 
-1. Dominic reviews the behavioural assumptions in `docs/model_rules.md` section 8 and
-   decides the baseline: learning from prices off or calibrated; and now also whether the
-   fixed $0.20 margin should stay, since it stops trade when traders share an estimate.
-2. Freeze the configuration and bump `MODEL_VERSION`.
-3. Second benchmark aimed at the main model's measures: a Glosten–Milgrom run summarized
-   with `metrics.summarize`, so the spread decomposition is checked against theory too.
-4. Show the new measures in the dashboard.
-5. Read and cite sources.
+1. Dominic reads the frozen-baseline results and the decisions in `docs/model_rules.md`
+   section 8; any decision can still be reversed.
+2. Benchmark aimed at the main model's measures: a Glosten–Milgrom run summarized with
+   `metrics.summarize`, so the spread decomposition is checked against theory too.
+3. Show the newer measures in the dashboard.
+4. Read and cite sources.
+5. First extension: better-informed traders who trade beyond their need when their edge
+   is large (a variant, with its own calibration).

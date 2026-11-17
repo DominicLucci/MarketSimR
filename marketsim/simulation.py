@@ -15,7 +15,7 @@ import numpy as np
 from .config import MODEL_VERSION, SimConfig
 from .events import Event, Side
 from .exchange import Exchange
-from .traders import TraderView, decide, estimate_value
+from .traders import TraderView, decide, effective_margin, estimate_value
 from .world import arrival_schedule, informed_traders, trader_luck, value_path
 
 DEPTH_WINDOW = 50  # ticks either side of the mid-quote counted as "near" for depth
@@ -94,7 +94,7 @@ def run_simulation(
             quotes=exchange.quotes(),
         )
         price_sd = config.price_sd if config.learn_from_prices else None
-        intent, reason = decide(view, config.margin, config.max_order_size, price_sd)
+        intent, reason = decide(view, config.margin, config.max_order_size, price_sd, config.urgency_scale)
         order_id = None
         if intent is not None:
             order_id = exchange.submit_limit(
@@ -111,6 +111,7 @@ def run_simulation(
                 "informed": is_informed,
                 "signal": view.signal,
                 "estimate": estimate_value(view, price_sd),
+                "margin": effective_margin(config.margin, view.target_shares - view.shares, config.urgency_scale),
                 "shares": view.shares,
                 "target": view.target_shares,
                 "best_bid": view.quotes.best_bid,

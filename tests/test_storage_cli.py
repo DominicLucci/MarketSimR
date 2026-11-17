@@ -35,5 +35,8 @@ def test_command_line_run_and_trace(capsys):
     assert "informed share 50% (20 of 40 traders)" in printed
     assert "step 10: trader" in printed and "hidden from the trader" in printed
     assert result.config.seed == 2
+    assert result.config.learn_from_prices and result.config.urgency_scale == 10  # the frozen baseline
     for step in range(300):  # every arrival can be explained without error
         assert trace_text(result, step).startswith(f"step {step}:")
+    pilot = main(["--seed", "2", "--informed-share", "0.5", "--steps", "300", "--pilot-rules"])
+    assert not pilot.config.learn_from_prices and pilot.config.urgency_scale == 0

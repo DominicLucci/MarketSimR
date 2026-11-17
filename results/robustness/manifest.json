@@ -1,7 +1,7 @@
 {
   "command": "python -m marketsim.experiment --design robustness --seeds 30",
   "design": "robustness",
-  "model_version": "0.2.0-pilot",
+  "model_version": "1.0.0",
   "base_config": {
     "n_traders": 80,
     "initial_cash": 100000,
@@ -15,8 +15,9 @@
     "sigma_informed": 10.0,
     "sigma_uninformed": 100.0,
     "margin": 20.0,
-    "learn_from_prices": false,
+    "learn_from_prices": true,
     "price_sd": 30.0,
+    "urgency_scale": 10,
     "max_need": 5,
     "max_order_size": 5,
     "order_lifetime": 80,
@@ -64,32 +65,33 @@
     1.0
   ],
   "variants": {
-    "main": {},
-    "learn_calibrated": {
-      "learn_from_prices": true,
+    "main": {
       "by_share": {
         "0.0": {
-          "price_sd": 48.2
+          "price_sd": 48.5
         },
         "0.1": {
-          "price_sd": 45.5
+          "price_sd": 43.5
         },
         "0.25": {
-          "price_sd": 41.5
+          "price_sd": 37.6
         },
         "0.5": {
-          "price_sd": 33.9
+          "price_sd": 30.8
         },
         "0.75": {
-          "price_sd": 28.0
+          "price_sd": 25.8
         },
         "0.9": {
-          "price_sd": 25.5
+          "price_sd": 23.3
         },
         "1.0": {
-          "price_sd": 24.1
+          "price_sd": 22.0
         }
       }
+    },
+    "no_learning": {
+      "learn_from_prices": false
     }
   },
   "runs": {

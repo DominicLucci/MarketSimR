@@ -3,8 +3,9 @@
     python -m marketsim.dashboard            # then open http://127.0.0.1:8000
     python -m marketsim.dashboard --port 8050
 
-The page asks this server for a run and the server calls `run_simulation`, the same
-function the command line and the experiment use. So the dashboard cannot show a different
+The page asks this server for a run of the frozen baseline (learning from prices with
+calibrated trust, urgency margin) and the server calls `run_simulation`, the same function
+the command line and the experiment use. So the dashboard cannot show a different
 market from the batch runner for the same settings; `tests/test_dashboard.py` checks that.
 """
 
@@ -19,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .config import SimConfig
 from .events import Side, Trade
-from .experiment import SHARES
+from .experiment import SHARES, baseline_config
 from .metrics import summarize, trader_outcomes
 from .simulation import run_simulation
 from .storage import run_manifest
@@ -52,14 +53,15 @@ def run_payload(config: SimConfig) -> dict[str, Any]:
 
 
 def config_from_query(query: dict[str, list[str]]) -> SimConfig:
-    """Only the seed, the informed share and the run length can be set from the page."""
+    """Only the seed, the informed share and the run length can be set from the page; the
+    rest is the frozen baseline with the trust calibrated for that share."""
     defaults = SimConfig()
     seed = int(query.get("seed", ["0"])[0])
     share = float(query.get("informed_share", [str(defaults.informed_share)])[0])
     steps = int(query.get("n_steps", [str(defaults.n_steps)])[0])
     if seed < 0 or not 1 <= steps <= MAX_STEPS:
         raise ValueError(f"seed must be 0 or more and n_steps between 1 and {MAX_STEPS}")
-    return SimConfig(seed=seed, informed_share=share, n_steps=steps)
+    return baseline_config(share, seed=seed, n_steps=steps)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -81,7 +83,7 @@ class Handler(BaseHTTPRequestHandler):
         elif url.path == "/favicon.ico":
             self._send(204, "image/x-icon", b"")
         elif url.path == "/api/options":
-            defaults = SimConfig()
+            defaults = baseline_config(SimConfig().informed_share)
             self._json(200, {"shares": list(SHARES), "defaults": defaults.to_dict(), "max_steps": MAX_STEPS})
         elif url.path == "/api/run":
             try:

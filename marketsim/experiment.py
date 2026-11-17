@@ -1,7 +1,9 @@
-"""The first experiment: vary the share of better-informed traders.
+"""The saved experiments: vary the share of better-informed traders under the frozen
+baseline, and compare it with variants that each change one rule.
 
-    python -m marketsim.experiment                 # 30 seeds, writes results/informed_share
-    python -m marketsim.experiment --seeds 5 --out results/scratch/quick
+    python -m marketsim.experiment                          # writes results/informed_share
+    python -m marketsim.experiment --design scheduled_news  # or robustness, news_sign
+    python -m marketsim.experiment --check                  # regenerate and compare
 
 For every seed, all informed shares are run on the same value path, the same arrival
 schedule and the same per-trader luck, so settings are compared within a seed. The summary
@@ -9,16 +11,19 @@ is the average within-seed difference from the 0% baseline with a 95% interval a
 seeds. Individual trades inside a run share one market history and are not treated as
 independent observations; the seed is the unit.
 
-Three parts:
+The frozen baseline (`BASELINE`, model 1.0.0; docs/model_rules.md section 8):
 
-1. main                the configured gap in signal precision
-2. narrow_gap          sensitivity: the better-informed error is 5x larger (a smaller gap)
-3. short_lived_orders  sensitivity: resting orders expire after 20 steps instead of 80
-4. learn_from_prices   traders blend signal and mid-quote, trusting prices at a fixed $0.30
-5. learn_calibrated    the same, with trust calibrated at each share (marketsim/calibrate.py)
-6. control             equal information for both groups; relabelling must change nothing
+* traders learn from prices, trusting the mid-quote as much as it deserves at that informed
+  share (trust calibrated by marketsim/calibrate.py, separately for each variant);
+* a trader's margin shrinks with its distance from its inventory target (urgency_scale 10,
+  the largest gap a trader can have);
+* resting orders are not refreshed when news arrives, and nobody trades beyond its target.
 
-A variant's settings may include "by_share": {share: {...}}, applied only at that share.
+Variants change one thing each: no_learning, fixed_margin (the pilot's fixed $0.20),
+strong_urgency (full urgency at 5 shares), narrow_gap, short_lived_orders, pull_on_news.
+A variant marked {"trust": "calibrated"} gets the trust stored for it, at each share, in
+marketsim/calibrated_trust.json. A variant may also carry "by_share": {share: {...}},
+applied only at that share. Each design also runs the equal-information control.
 """
 
 from __future__ import annotations
@@ -40,34 +45,42 @@ from .config import MODEL_VERSION, SimConfig
 from .events import to_record
 from .metrics import summarize
 from .news import HORIZONS, WINDOW, last_trade_path, response_curve
+from .parallel import pmap
 from .simulation import run_simulation
 
 SHARES = (0.0, 0.10, 0.25, 0.50, 0.75)
 BASELINE_SHARE = 0.0
-# Trust in prices (price_sd, ticks) at which the mid-quote error the market produces equals
-# the error traders assume, found by `python -m marketsim.calibrate [--design ...]` on seeds
-# 1000..1019. Rerun that command with --check after any change to the model.
-CALIBRATED_PRICE_SD: dict[str, dict[float, float]] = {
-    "informed_share": {0.0: 53.2, 0.10: 50.3, 0.25: 46.4, 0.50: 40.1, 0.75: 34.7},
-    "scheduled_news": {0.0: 45.7, 0.10: 42.8, 0.25: 39.0, 0.50: 31.0, 0.75: 24.7},
-    "robustness": {0.0: 48.2, 0.10: 45.5, 0.25: 41.5, 0.50: 33.9, 0.75: 28.0, 0.90: 25.5, 1.0: 24.1},
-}
+
+# The frozen baseline. Every design starts from these rules; variants change one thing.
+BASELINE: dict[str, Any] = {"learn_from_prices": True, "urgency_scale": 10}
+# Marks a variant whose trust in prices is calibrated at each share (marketsim/calibrate.py).
+CALIBRATED: dict[str, Any] = {"trust": "calibrated"}
+TRUST_TABLE = Path(__file__).with_name("calibrated_trust.json")
+
+
+def load_trust_table(path: Path = TRUST_TABLE) -> dict[str, Any]:
+    """The stored calibrated trust: {"model_version", "seeds", "trust": {design: {variant:
+    {share: price_sd}}}}, with shares as floats. Empty if nothing has been stored."""
+    if not Path(path).exists():
+        return {"model_version": None, "seeds": [], "trust": {}}
+    data = json.loads(Path(path).read_text())
+    data["trust"] = {
+        design: {variant: {float(s): float(v) for s, v in shares.items()} for variant, shares in variants.items()}
+        for design, variants in data["trust"].items()
+    }
+    return data
 
 
 NEWS_SIGN_TRUST = (15, 30, 60, 120, 240, 480)  # price_sd in ticks
 NEWS_SIGN_LIFETIMES = (20, 80)
 
-
-def calibrated(design: str) -> dict[str, object]:
-    return {"learn_from_prices": True, "by_share": {s: {"price_sd": v} for s, v in CALIBRATED_PRICE_SD[design].items()}}
-
-
 VARIANTS: dict[str, dict[str, Any]] = {
-    "main": {},
-    "narrow_gap": {"sigma_informed": 50.0},
-    "short_lived_orders": {"order_lifetime": 20},
-    "learn_from_prices": {"learn_from_prices": True},
-    "learn_calibrated": calibrated("informed_share"),
+    "main": {**CALIBRATED},
+    "no_learning": {"learn_from_prices": False},
+    "fixed_margin": {"urgency_scale": 0, **CALIBRATED},
+    "strong_urgency": {"urgency_scale": 5, **CALIBRATED},
+    "narrow_gap": {"sigma_informed": 50.0, **CALIBRATED},
+    "short_lived_orders": {"order_lifetime": 20, **CALIBRATED},
 }
 # Measures that exist at every share, compared with the 0% baseline within a seed.
 MARKET_MEASURES = (
@@ -95,49 +108,84 @@ CONTROL_SEEDS = 5
 # and where the results live.
 DESIGNS: dict[str, dict[str, Any]] = {
     # News arrives at random. The main experiment.
-    "informed_share": {"out": "results/informed_share", "base": {}, "variants": VARIANTS},
+    "informed_share": {"out": "results/informed_share", "base": dict(BASELINE), "variants": VARIANTS},
     # News arrives every 100 steps with a fixed size of 0.5% in a random direction, so every
     # event is isolated and equally large. Built to measure the news response precisely.
     "scheduled_news": {
         "out": "results/scheduled_news",
-        "base": {"news_every": 100},
+        "base": {**BASELINE, "news_every": 100},
         "variants": {
-            "main": {},
-            "short_lived_orders": {"order_lifetime": 20},
-            "pull_on_news": {"cancel_on_news": True},
-            "learn_from_prices": {"learn_from_prices": True},
-            "learn_calibrated": calibrated("scheduled_news"),
+            "main": {**CALIBRATED},
+            "no_learning": {"learn_from_prices": False},
+            "fixed_margin": {"urgency_scale": 0, **CALIBRATED},
+            "short_lived_orders": {"order_lifetime": 20, **CALIBRATED},
+            "pull_on_news": {"cancel_on_news": True, **CALIBRATED},
         },
     },
     # Robustness: the scheduled-news market at twice the size and length, a finer share grid
     # up to everyone better informed, and seeds 100..129, which no other result has used.
     "robustness": {
         "out": "results/robustness",
-        "base": {"news_every": 100, "n_traders": 80, "n_steps": 8_000},
+        "base": {**BASELINE, "news_every": 100, "n_traders": 80, "n_steps": 8_000},
         "shares": (0.0, 0.10, 0.25, 0.50, 0.75, 0.90, 1.0),
         "first_seed": 100,
-        "variants": {"main": {}, "learn_calibrated": calibrated("robustness")},
+        "variants": {"main": {**CALIBRATED}, "no_learning": {"learn_from_prices": False}},
     },
     # What decides the sign of the news-speed result: fixed trust in prices from heavy
     # (price_sd $0.15) to light ($4.80), and no learning (the limit of no trust), crossed with
-    # 20- and 80-step orders. Scheduled news.
+    # 20- and 80-step orders. Scheduled news; otherwise the baseline rules.
     "news_sign": {
         "out": "results/news_sign",
-        "base": {"news_every": 100},
+        "base": {**BASELINE, "news_every": 100},
         "variants": {
             f"{name}_life{life}": {**settings, "order_lifetime": life}
             for life in NEWS_SIGN_LIFETIMES
             for name, settings in [
-                *((f"trust{t}", {"learn_from_prices": True, "price_sd": float(t)}) for t in NEWS_SIGN_TRUST),
-                ("no_learning", {}),
+                *((f"trust{t}", {"price_sd": float(t)}) for t in NEWS_SIGN_TRUST),
+                ("no_learning", {"learn_from_prices": False}),
             ]
         },
     },
 }
 
 
+def calibrated_variant_names(design: str) -> list[str]:
+    return [name for name, spec in DESIGNS[design]["variants"].items() if spec.get("trust") == "calibrated"]
+
+
+def resolved_variants(design: str, table: dict[str, Any] | None = None) -> dict[str, dict[str, Any]]:
+    """The design's variants with calibrated trust filled in from the stored table."""
+    table = load_trust_table() if table is None else table
+    out = {}
+    for name, spec in DESIGNS[design]["variants"].items():
+        settings = {k: v for k, v in spec.items() if k != "trust"}
+        if spec.get("trust") == "calibrated":
+            if table["model_version"] != MODEL_VERSION:
+                raise ValueError(
+                    f"stored trust is for model {table['model_version']}, the code is {MODEL_VERSION}: "
+                    f"run python -m marketsim.calibrate --design {design} --write"
+                )
+            stored = table["trust"].get(design, {}).get(name)
+            if stored is None:
+                raise ValueError(f"no calibrated trust stored for {design}/{name}: run python -m marketsim.calibrate --design {design} --write")
+            settings["by_share"] = {share: {"price_sd": value} for share, value in stored.items()}
+        out[name] = settings
+    return out
+
+
 def design_shares(design: str) -> tuple[float, ...]:
     return tuple(DESIGNS[design].get("shares", SHARES))
+
+
+def baseline_config(informed_share: float, design: str = "informed_share", **changes: Any) -> SimConfig:
+    """The frozen baseline at one informed share with its calibrated trust: exactly what the
+    design's main variant runs. Only shares on the design's grid have a calibrated trust."""
+    base = SimConfig(**DESIGNS[design]["base"])
+    base.with_(informed_share=informed_share)  # a share that is not a whole number of traders fails here
+    by_share = resolved_variants(design)["main"]["by_share"]
+    if informed_share not in by_share:
+        raise ValueError(f"no calibrated trust at informed share {informed_share}: choose one of {sorted(by_share)}")
+    return base.with_(informed_share=informed_share, **by_share[informed_share], **changes)
 
 
 def mean_interval(values: pd.Series) -> dict[str, Any]:
@@ -155,35 +203,54 @@ def mean_interval(values: pd.Series) -> dict[str, Any]:
     return out
 
 
+def _run_one(task: tuple[str, SimConfig]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """One run: its summary row and its news-response curve in long form."""
+    variant, config = task
+    result = run_simulation(config)
+    row = {"variant": variant, **summarize(result)}
+    informed, others = row["trading_gain_informed"], row["trading_gain_uninformed"]
+    row["gain_gap"] = None if informed is None or others is None else informed - others
+    in_mid = response_curve(result.value_path, result.mid_path)["reflected"]
+    in_trades = response_curve(result.value_path, last_trade_path(result.events, config.n_steps))["reflected"]
+    curve = [
+        {"variant": variant, "seed": config.seed, "informed_share": config.informed_share, "steps_after_news": k,
+         "in_mid": in_mid[k], "in_trades": in_trades[k]}
+        for k in range(WINDOW + 1)
+    ]
+    return row, curve
+
+
 def run_grid(
-    base: SimConfig, seeds: list[int], variants: dict[str, dict[str, Any]], shares: tuple[float, ...] = SHARES
+    base: SimConfig,
+    seeds: list[int],
+    variants: dict[str, dict[str, Any]],
+    shares: tuple[float, ...] = SHARES,
+    jobs: int | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Every variant x seed x informed share.
+    """Every variant x seed x informed share, spread over processor cores.
 
     Returns one row per run, and the news-response curve of every run in long form
-    (one row per run and number of steps after news).
+    (one row per run and number of steps after news). Variants must already be resolved
+    (see resolved_variants); a variant that learns from prices must say how much it trusts
+    them, so the default price_sd is never used by accident.
     """
-    rows, curves = [], []
+    tasks = []
     for variant, settings in variants.items():
+        if "trust" in settings:
+            raise ValueError(f"variant {variant}: resolve its calibrated trust first (resolved_variants)")
         overrides = {k: v for k, v in settings.items() if k != "by_share"}
         by_share = settings.get("by_share", {})
         if "by_share" in settings and set(by_share) != set(shares):
             raise ValueError(f"variant {variant}: per-share settings must cover every share {shares}")
+        learning = overrides.get("learn_from_prices", base.learn_from_prices)
+        if learning and "price_sd" not in overrides and not all("price_sd" in by_share.get(s, {}) for s in shares):
+            raise ValueError(f"variant {variant}: learns from prices but sets no trust (price_sd or calibrated)")
         for seed in seeds:
             for share in shares:
-                config = base.with_(seed=seed, informed_share=share, **overrides, **by_share.get(share, {}))
-                result = run_simulation(config)
-                row = {"variant": variant, **summarize(result)}
-                informed, others = row["trading_gain_informed"], row["trading_gain_uninformed"]
-                row["gain_gap"] = None if informed is None or others is None else informed - others
-                rows.append(row)
-                in_mid = response_curve(result.value_path, result.mid_path)["reflected"]
-                in_trades = response_curve(result.value_path, last_trade_path(result.events, config.n_steps))["reflected"]
-                for k in range(WINDOW + 1):
-                    curves.append(
-                        {"variant": variant, "seed": seed, "informed_share": share, "steps_after_news": k,
-                         "in_mid": in_mid[k], "in_trades": in_trades[k]}
-                    )
+                tasks.append((variant, base.with_(seed=seed, informed_share=share, **overrides, **by_share.get(share, {}))))
+    results = pmap(_run_one, tasks, jobs)
+    rows = [row for row, _ in results]
+    curves = [point for _, curve in results for point in curve]
     return pd.DataFrame(rows), pd.DataFrame(curves)
 
 
@@ -240,7 +307,10 @@ def _fingerprint(events: list) -> str:
 
 
 def equal_information_control(base: SimConfig, seeds: list[int], shares: tuple[float, ...] = SHARES) -> dict[str, Any]:
-    """Give both groups the same precision. The 'better informed' label must then be inert."""
+    """Give both groups the same precision. The 'better informed' label must then be inert.
+
+    Trust in prices is held at the base setting for every share here: calibrated trust
+    differs by share, which would itself change the runs and hide what is being tested."""
     equal = base.with_(sigma_informed=base.sigma_uninformed)
     mismatched = []
     for seed in seeds:
@@ -248,7 +318,7 @@ def equal_information_control(base: SimConfig, seeds: list[int], shares: tuple[f
         if len(set(prints.values())) != 1:
             mismatched.append(seed)
     return {
-        "description": "both groups get sigma_uninformed; event logs compared across informed shares",
+        "description": "both groups get sigma_uninformed and one trust in prices; event logs compared across informed shares",
         "seeds": seeds,
         "shares": list(shares),
         "runs": len(seeds) * len(shares),
@@ -261,7 +331,7 @@ def run_experiment(
     base: SimConfig, n_seeds: int, out_dir: str | Path, chart: bool = True, design: str = "informed_share"
 ) -> Path:
     """Run one design. `base` must already include the design's own base settings."""
-    variants = DESIGNS[design]["variants"]
+    variants = resolved_variants(design)
     shares = design_shares(design)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -310,7 +380,9 @@ def run_experiment(
         if design == "news_sign":
             from .charts import news_sign_chart
 
-            news_sign_chart(paired, n_seeds, out / "news_sign.png")
+            stored = load_trust_table()["trust"].get("scheduled_news", {}).get("main", {})
+            band = (min(stored.values()), max(stored.values())) if stored else None
+            news_sign_chart(paired, n_seeds, out / "news_sign.png", calibrated=band)
         elif design == "informed_share":
             market_chart(runs, paired, out / "market_measures.png")
             outcomes_chart(runs, levels, out / "trader_outcomes.png")
@@ -390,7 +462,7 @@ def results_text(out: Path) -> str:
 
 
 def main(argv: list[str] | None = None) -> Path:
-    parser = argparse.ArgumentParser(description="Informed-share experiment with paired seeds.")
+    parser = argparse.ArgumentParser(description="Informed-share experiments with paired seeds.")
     parser.add_argument("--seeds", type=int, default=30, help="number of seeds (0..N-1)")
     parser.add_argument("--steps", type=int, help="steps per run (default: the design's own)")
     parser.add_argument("--design", choices=sorted(DESIGNS), default="informed_share")

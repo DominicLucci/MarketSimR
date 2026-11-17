@@ -10,10 +10,11 @@ import pytest
 
 from marketsim.config import SimConfig
 from marketsim.dashboard import config_from_query, make_server, run_payload
+from marketsim.experiment import baseline_config
 from marketsim.metrics import summarize
 from marketsim.simulation import run_simulation
 
-CONFIG = SimConfig(seed=3, informed_share=0.5, n_steps=300)
+CONFIG = baseline_config(0.5, seed=3, n_steps=300)
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # talk to localhost directly
 
 
@@ -35,7 +36,8 @@ def test_settings_can_be_recovered_from_an_export():
 
 
 def test_query_validation():
-    assert config_from_query({"seed": ["4"], "informed_share": ["0.1"]}) == SimConfig(seed=4, informed_share=0.1)
+    assert config_from_query({"seed": ["4"], "informed_share": ["0.1"]}) == baseline_config(0.1, seed=4)
+    assert CONFIG.learn_from_prices and CONFIG.urgency_scale == 10  # the page shows the frozen baseline
     for bad in ({"seed": ["-1"]}, {"n_steps": ["0"]}, {"n_steps": ["999999"]}, {"informed_share": ["0.33"]}, {"seed": ["x"]}):
         with pytest.raises(ValueError):
             config_from_query(bad)

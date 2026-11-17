@@ -1,7 +1,7 @@
 {
   "command": "python -m marketsim.experiment --design news_sign --seeds 30",
   "design": "news_sign",
-  "model_version": "0.2.0-pilot",
+  "model_version": "1.0.0",
   "base_config": {
     "n_traders": 40,
     "initial_cash": 100000,
@@ -15,8 +15,9 @@
     "sigma_informed": 10.0,
     "sigma_uninformed": 100.0,
     "margin": 20.0,
-    "learn_from_prices": false,
+    "learn_from_prices": true,
     "price_sd": 30.0,
+    "urgency_scale": 10,
     "max_need": 5,
     "max_order_size": 5,
     "order_lifetime": 80,
@@ -63,69 +64,59 @@
   ],
   "variants": {
     "trust15_life20": {
-      "learn_from_prices": true,
       "price_sd": 15.0,
       "order_lifetime": 20
     },
     "trust30_life20": {
-      "learn_from_prices": true,
       "price_sd": 30.0,
       "order_lifetime": 20
     },
     "trust60_life20": {
-      "learn_from_prices": true,
       "price_sd": 60.0,
       "order_lifetime": 20
     },
     "trust120_life20": {
-      "learn_from_prices": true,
       "price_sd": 120.0,
       "order_lifetime": 20
     },
     "trust240_life20": {
-      "learn_from_prices": true,
       "price_sd": 240.0,
       "order_lifetime": 20
     },
     "trust480_life20": {
-      "learn_from_prices": true,
       "price_sd": 480.0,
       "order_lifetime": 20
     },
     "no_learning_life20": {
+      "learn_from_prices": false,
       "order_lifetime": 20
     },
     "trust15_life80": {
-      "learn_from_prices": true,
       "price_sd": 15.0,
       "order_lifetime": 80
     },
     "trust30_life80": {
-      "learn_from_prices": true,
       "price_sd": 30.0,
       "order_lifetime": 80
     },
     "trust60_life80": {
-      "learn_from_prices": true,
       "price_sd": 60.0,
       "order_lifetime": 80
     },
     "trust120_life80": {
-      "learn_from_prices": true,
       "price_sd": 120.0,
       "order_lifetime": 80
     },
     "trust240_life80": {
-      "learn_from_prices": true,
       "price_sd": 240.0,
       "order_lifetime": 80
     },
     "trust480_life80": {
-      "learn_from_prices": true,
       "price_sd": 480.0,
       "order_lifetime": 80
     },
     "no_learning_life80": {
+      "learn_from_prices": false,
       "order_lifetime": 80
     }
   },

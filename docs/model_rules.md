@@ -1,8 +1,9 @@
 # Model rules
 
 This page states the rules the code implements. Each rule names the test that checks it.
-Rules marked **provisional** were chosen by the build agent to get a working baseline and
-are Dominic's to confirm or change.
+Sections 7 and 8 were provisional during the pilot. They were frozen in model 1.0.0
+(2026-11-17), when Dominic asked the build agent to take its recommended option for each
+open choice; section 8 records the decisions and the reasons.
 
 ## 1. Units
 
@@ -76,7 +77,7 @@ With `Exchange(check_invariants=True)` (`marketsim/checks.py`):
   cancellations, expiries and each kind of rejection.
 - Replaying a saved list of commands reproduces the event log exactly (`test_replay.py`).
 
-## 7. Underlying value and private signals (provisional)
+## 7. Underlying value and private signals (frozen in model 1.0.0)
 
 - The value starts at $100.00 (10,000 ticks). On each step, with probability `news_prob`
   (2%), news arrives and the value is multiplied by `exp(x)`, where `x` is normal with
@@ -89,7 +90,7 @@ With `Exchange(check_invariants=True)` (`marketsim/checks.py`):
   shares), the same arrival process and the same decision rule. The decision rule is a
   function that receives no group label (`marketsim/traders.py`).
 
-## 8. Trader behaviour (provisional)
+## 8. Trader behaviour (frozen in model 1.0.0)
 
 Each time a trader arrives:
 
@@ -98,48 +99,78 @@ Each time a trader arrives:
    10 shares plus that need. This is the trader's reason to trade.
 3. **Inventory sets side and size.** Below target it buys, above target it sells, at
    target it sends nothing. Size is the gap to target, capped at 5 shares and by what the
-   account can fund.
-4. **The signal sets the price.** A buyer bids `signal - margin` rounded down. A seller
-   offers `signal + margin` rounded up. The margin is $0.20.
-5. The order expires after 80 steps if still resting.
+   account can fund. Shares therefore always stay between 5 and 15, so the gap is never
+   more than 10.
+4. **It forms an estimate by learning from prices.** The estimate is
+   `(1 - w) x signal + w x mid-quote` with `w = signal_sd^2 / (signal_sd^2 + price_sd^2)`:
+   the noisier its own signal, the more it leans on the price. `price_sd` is how far off
+   traders believe the mid-quote typically is, and it is **calibrated**: at each informed
+   share it equals the root-mean-square mid-quote error the market then produces, so the
+   belief is correct (`marketsim/calibrate.py`, bisection on seeds 1000 to 1019, values in
+   `marketsim/calibrated_trust.json`). With no two-sided quote the signal is used alone.
+5. **Urgency sets the margin.** `urgency = min(1, |gap| / 10)` and the margin is
+   `$0.20 x (1 - 2 x urgency)`: the full $0.20 for a trader one share from target, nothing
+   at five shares, and minus $0.20 (paying up to $0.20 beyond its estimate) at ten. A buyer
+   bids `estimate - margin` rounded down; a seller offers `estimate + margin` rounded up.
+   Two traders with the same estimate trade exactly when their urgencies add up to at
+   least one.
+6. The order expires after 80 steps if still resting.
 
+In code: `BASELINE` in `marketsim/experiment.py` (`learn_from_prices = True`,
+`urgency_scale = 10`) plus calibrated trust; `baseline_config(share)` builds it. The plain
+defaults of `SimConfig` keep both options off, which is the pilot rule.
 `python -m marketsim.run --seed 1 --informed-share 0.25 --trace-step 1` prints one
 decision from its inputs to its fills.
 
+### Decisions taken for 1.0.0, and why
+
+The pilot (model 0.2.0-pilot, git tag `pilot-0.2.0`) used signals only and a fixed $0.20
+margin. Its results decided four rules:
+
+- **Learning from prices: on, with calibrated trust.** A trader whose signal is typically
+  $1.00 off cannot sensibly ignore a mid-quote that was typically $0.15 to $0.44 off in the pilot. Fixed
+  trust was rejected: most of its effect came from the trust being wrong for the market it
+  produced. Traders who ignore prices are kept as the main comparison (`no_learning`),
+  because the direction of the news-speed result depends on this rule.
+- **Margin: shrinks with urgency.** With learning, traders hold nearly the same estimate,
+  and a fixed $0.20 cushion on both sides stopped most trade (15% to 25% of inventory need
+  met). When everyone agrees on the value, need is the only reason left to trade, so need
+  has to be what pushes someone across the spread. The scale of 10 shares is the largest
+  gap a trader can have. A scale of 5 was tried first and rejected: it restored trade but
+  made urgent trading dominate prices (in the saved results, mid-quote error at 75% better
+  informed is $0.37 at a scale of 5, against $0.18 at a scale of 10 and $0.21 with a fixed
+  margin). Kept as variants: `fixed_margin` (the
+  pilot rule) and `strong_urgency` (scale 5).
+- **Quotes are not refreshed on news.** Kept as in the pilot. Pulling every quote on news
+  assumes everyone sees news instantly; never refreshing fits occasional participants. The
+  truth for a given market lies between, so both bounds are reported: `pull_on_news` and
+  `short_lived_orders` (20-step orders).
+- **No positions beyond the target.** Kept. Letting better-informed traders speculate is a
+  larger change with new settings of its own, and is the first extension to make.
+
+The pilot numbers were kept: 40 traders, 4,000 steps, signal errors $0.10 and $1.00, 2%
+news chance per step with 0.5% jumps, 80-step orders. The robustness experiment (80
+traders, 8,000 steps, fresh seeds) checks that the results do not hinge on size.
+
 ### What this baseline assumes, and what that limits
 
-- **Traders do not learn from prices.** (Option: `learn_from_prices = True` replaces the
-  signal by `(1 - w) x signal + w x mid-quote` with `w = signal_sd^2 / (signal_sd^2 +
-  price_sd^2)`, where `price_sd`, $0.30 by default, is how far off traders believe the
-  mid-quote typically is. With no two-sided quote the signal is used alone. The
-  `learn_calibrated` variant instead sets `price_sd` at each informed share to the
-  root-mean-square mid-quote error the market then produces, found by bisection in
-  `marketsim/calibrate.py` on seeds 1000 to 1019; the values are stored in
-  `CALIBRATED_PRICE_SD` in `marketsim/experiment.py`. Every trader shares one belief about
-  price accuracy, and the belief does not change during a run.) In the baseline a
-  less-informed trader treats its own noisy
-  signal as its estimate and ignores what the quotes imply. Every trade is zero-sum on a
-  common value, so the less-informed group loses on average and keeps trading anyway. This
-  makes the mechanism easy to trace, and it means the model cannot show less-informed
-  traders protecting themselves by widening quotes or withdrawing.
-- **Inventory does not move the price a trader will accept.** Need decides only side and
-  size. Two equally informed traders with opposite needs both hold out for the margin and
-  mostly do not trade with each other unless news has made a resting quote stale.
+- **One shared, correct belief about price accuracy.** Every trader trusts prices equally,
+  the trust is right on average for that market, and it does not change during a run.
+  Traders do not learn the trust, and do not learn from trades or order flow beyond the
+  mid-quote.
+- **Urgency comes only from the size of the gap**, not from how long a trader has waited,
+  and the $0.20 margin itself is a fixed setting.
 - **No trader takes a position beyond its inventory target.** Better-informed traders
   profit by trading on better terms in the direction they already wanted to go, not by
-  speculating without limit.
-
+  trading because of what they know. The theory of informed trading (for example Glosten
+  and Milgrom, 1985) has informed traders trade for that reason; this model does not.
 - **Resting orders are never refreshed.** A quote changes only when its owner next arrives
-  (on average every 40 steps) or when it expires. After news, even a better-informed
-  trader's old quote stays in the book at the old value until someone takes it. The
-  news-speed results depend on this: with orders that expire after 20 steps instead of 80
-  most of the slowdown at high informed shares goes away.
-
-  Setting `cancel_on_news = True` makes every trader pull its resting order on a step
-  where the value changes (traders know that news arrived, not what it was). It is off in
-  the baseline and used as a variant in the scheduled-news experiment.
-
-These four are the first things to revisit if the results need to speak to real markets.
+  (on average every 40 steps) or when it expires. After news, an old quote stays in the
+  book at the old price until someone takes it. `cancel_on_news = True` makes every trader
+  pull its resting order on a step where the value changes (traders know that news
+  arrived, not what it was).
+- **There is no dedicated dealer.** Everyone is an occasional trader with a need; nobody
+  is paid to keep quotes on both sides.
 
 ## 9. Randomness and paired runs
 
@@ -173,8 +204,11 @@ unavailable, never as zero.
   (d = -1), with m0 the mid-quote the incoming trader saw and m1 the mid-quote 10 steps
   later: effective spread `2d(p - m0)`, price impact `2d(m1 - m0)`, realized spread
   `2d(p - m1)`. Effective = realized + impact for every trade. Trades without the needed
-  quotes are left out of all three. Price impact includes the mechanical effect of
-  removing the best quote, so it is not purely information.
+  quotes are left out of all three. Price impact is split at ma, the mid-quote at the end
+  of the trade's own step: immediate impact `2d(ma - m0)`, the trade's own footprint (the
+  quote it used up, and whatever is left of its order resting), and later impact
+  `2d(m1 - ma)`, how quotes kept moving its way afterwards. Only the later part can reflect
+  information held by others.
 - **News response** (`marketsim/news.py`): for each isolated news event at step T (no other
   news within 40 steps before or after), the share of the value change reflected k steps
   later is `sign(V[T] - V[T-1]) x (P[T+k] - P[T-1]) / |V[T] - V[T-1]|`, where P is the
@@ -183,7 +217,12 @@ unavailable, never as zero.
   A run has about 14 isolated events, so these are the noisiest measures here.
 - **Liquidity:** quotes are sampled every 10 steps after the arriving trader acts. Reported:
   mean best offer minus best bid when both exist, mean shares at each best quote, the share
-  of samples with no bid, with no offer and with both, and traded volume.
+  of samples with no bid, with no offer and with both, traded volume, and depth: shares
+  resting within $0.50 of the mid-quote on both sides together.
+- **Need met:** at each arrival a trader is `|target - shares|` from its target; need met
+  is the shares its order from that arrival filled, summed over arrivals, divided by the
+  total distance, overall and for each group. Unlike trading gains it does not sum to zero,
+  so it shows whether the market serves the reason traders came to trade.
 - **Trader outcomes:** per group, the mean per-trader wealth change with stock marked at
   the underlying value at the start and end, and the mean trading gain, which is final
   wealth minus the final wealth of the same trader had it never traded. Trading gains sum

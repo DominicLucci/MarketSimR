@@ -9,6 +9,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 SURFACE = "#fcfcfb"
@@ -22,8 +23,8 @@ PANELS = (
     ("volume", "Volume", "shares traded per run", 1.0),
 )
 VARIANT_STYLE = {
-    "main": (BLUE, r"Main: signal error \$0.10 vs \$1.00"),
-    "narrow_gap": (ORANGE, r"Narrow gap: \$0.50 vs \$1.00"),
+    "main": (BLUE, "Baseline: traders learn from prices"),
+    "no_learning": (ORANGE, "Traders ignore prices"),
 }
 
 
@@ -55,8 +56,8 @@ def _line(ax: plt.Axes, x, y, color: str, label: str | None = None, low=None, hi
 
 
 def market_chart(runs: pd.DataFrame, paired: pd.DataFrame, path: str | Path) -> None:
-    """Top row: every run and the mean, main variant. Bottom row: within-seed change from
-    the 0% baseline with 95% intervals, for both precision gaps."""
+    """Top row: every run and the mean, baseline. Bottom row: within-seed change from the 0%
+    share with 95% intervals, for the baseline and for traders who ignore prices."""
     main = runs[runs["variant"] == "main"]
     n_seeds = main["seed"].nunique()
     seeds = sorted(main["seed"].unique())
@@ -85,7 +86,7 @@ def market_chart(runs: pd.DataFrame, paired: pd.DataFrame, path: str | Path) -> 
         _titles(bottom, f"{title}: change from 0% informed", f"within-seed difference in {unit_word}, mean and 95% interval")
         bottom.set_xlabel("share of better-informed traders", color=TEXT_SECONDARY, fontsize=9)
 
-    axes[1, 2].legend(frameon=False, fontsize=9, labelcolor=TEXT_SECONDARY, loc="lower left", handlelength=1.6)
+    axes[1, 1].legend(frameon=False, fontsize=9, labelcolor=TEXT_SECONDARY, loc="lower left", handlelength=1.6)
     fig.suptitle(
         "How the share of better-informed traders changes the market",
         x=0.012, y=0.988, ha="left", color=TEXT, fontsize=14, fontweight="bold",
@@ -93,7 +94,7 @@ def market_chart(runs: pd.DataFrame, paired: pd.DataFrame, path: str | Path) -> 
     fig.text(
         0.012, 0.95,
         f"{n_seeds} seeds per setting; within a seed every setting shares one value path, arrival schedule and trader luck.\n"
-        "Top row: main variant, each dot is one run and the line is the mean. Bottom row: both signal-precision gaps.",
+        "Top row: the baseline, each dot is one run and the line is the mean. Bottom row: baseline and traders who ignore prices.",
         color=TEXT_SECONDARY, fontsize=10, va="top", linespacing=1.4,
     )
     fig.tight_layout(rect=(0, 0, 1, 0.9), h_pad=2.2, w_pad=2.0)
@@ -143,14 +144,14 @@ SHARE_RAMP = (
 
 
 def news_chart(news: pd.DataFrame, n_seeds: int, path: str | Path, subtitle: str | None = None) -> None:
-    """Share of a value change reflected in the mid-quote, by steps since the news.
-    Left: main variant. Right: the same markets with short-lived orders."""
+    """Share of a value change reflected in the mid-quote, by steps since the news: the
+    baseline and the variants of the design, one panel each."""
     titles = {
-        "main": "Orders rest up to 80 steps (main)",
+        "main": "Baseline: traders learn from prices",
+        "no_learning": "Traders ignore prices",
+        "fixed_margin": r"Fixed \$0.20 margin",
         "short_lived_orders": "Orders rest up to 20 steps",
         "pull_on_news": "Quotes pulled when news arrives",
-        "learn_from_prices": "Traders learn from prices, fixed trust",
-        "learn_calibrated": "Traders learn from prices, calibrated trust",
     }
     panels = [(variant, title) for variant, title in titles.items() if variant in set(news["variant"])]
     if "pull_on_news" not in set(news["variant"]):  # the main experiment keeps its two-panel chart
@@ -205,9 +206,13 @@ def news_chart(news: pd.DataFrame, n_seeds: int, path: str | Path, subtitle: str
     plt.close(fig)
 
 
-def news_sign_chart(paired: pd.DataFrame, n_seeds: int, path: str | Path) -> None:
+def news_sign_chart(
+    paired: pd.DataFrame, n_seeds: int, path: str | Path, calibrated: tuple[float, float] | None = None
+) -> None:
     """Effect of a 75% better-informed share on news speed, against how much traders trust
-    prices. Positive: better-informed traders speed news up. One line per order lifetime."""
+    prices. Positive: better-informed traders speed news up. One line per order lifetime.
+    `calibrated` (low, high), in ticks, shades the range the baseline's calibrated trust
+    takes across shares."""
     from .experiment import NEWS_SIGN_LIFETIMES, NEWS_SIGN_TRUST
 
     fig, axes = plt.subplots(1, 2, figsize=(12.5, 5.0), facecolor=SURFACE, sharey=True)
@@ -230,6 +235,11 @@ def news_sign_chart(paired: pd.DataFrame, n_seeds: int, path: str | Path) -> Non
         ax.set_xticklabels(labels)
         ax.set_xlim(-0.4, positions[-1] + 0.4)
         ax.axvline(positions[-1] - 0.5, color=GRID, linewidth=1, linestyle=(0, (2, 3)))
+        if calibrated is not None:  # trust levels double at each position: position = log2(t / first)
+            low, high = (np.log2(t / NEWS_SIGN_TRUST[0]) for t in calibrated)
+            ax.axvspan(low, high, color=BLUE, alpha=0.08, linewidth=0, zorder=0)
+            ax.text((low + high) / 2, 0.02, "baseline's\ncalibrated trust", transform=ax.get_xaxis_transform(),
+                    ha="center", va="bottom", color=TEXT_MUTED, fontsize=8)
         ax.yaxis.set_major_formatter(lambda value, _: f"{value * 100:+.0f} pts")
         ax.set_xlabel("how far off traders believe the mid-quote is (more trust on the left)", color=TEXT_SECONDARY, fontsize=9)
         _titles(ax, f"{horizon} steps after news", "share of news in the mid-quote: 75% better informed minus 0%")

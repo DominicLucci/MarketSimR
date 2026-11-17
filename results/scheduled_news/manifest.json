@@ -1,7 +1,7 @@
 {
   "command": "python -m marketsim.experiment --design scheduled_news --seeds 30",
   "design": "scheduled_news",
-  "model_version": "0.2.0-pilot",
+  "model_version": "1.0.0",
   "base_config": {
     "n_traders": 40,
     "initial_cash": 100000,
@@ -15,8 +15,9 @@
     "sigma_informed": 10.0,
     "sigma_uninformed": 100.0,
     "margin": 20.0,
-    "learn_from_prices": false,
+    "learn_from_prices": true,
     "price_sd": 30.0,
+    "urgency_scale": 10,
     "max_need": 5,
     "max_order_size": 5,
     "order_lifetime": 80,
@@ -62,18 +63,30 @@
     0.75
   ],
   "variants": {
-    "main": {},
-    "short_lived_orders": {
-      "order_lifetime": 20
+    "main": {
+      "by_share": {
+        "0.0": {
+          "price_sd": 48.8
+        },
+        "0.1": {
+          "price_sd": 43.0
+        },
+        "0.25": {
+          "price_sd": 36.3
+        },
+        "0.5": {
+          "price_sd": 29.1
+        },
+        "0.75": {
+          "price_sd": 23.4
+        }
+      }
     },
-    "pull_on_news": {
-      "cancel_on_news": true
+    "no_learning": {
+      "learn_from_prices": false
     },
-    "learn_from_prices": {
-      "learn_from_prices": true
-    },
-    "learn_calibrated": {
-      "learn_from_prices": true,
+    "fixed_margin": {
+      "urgency_scale": 0,
       "by_share": {
         "0.0": {
           "price_sd": 45.7
@@ -89,6 +102,46 @@
         },
         "0.75": {
           "price_sd": 24.7
+        }
+      }
+    },
+    "short_lived_orders": {
+      "order_lifetime": 20,
+      "by_share": {
+        "0.0": {
+          "price_sd": 53.1
+        },
+        "0.1": {
+          "price_sd": 47.3
+        },
+        "0.25": {
+          "price_sd": 39.5
+        },
+        "0.5": {
+          "price_sd": 29.2
+        },
+        "0.75": {
+          "price_sd": 21.1
+        }
+      }
+    },
+    "pull_on_news": {
+      "cancel_on_news": true,
+      "by_share": {
+        "0.0": {
+          "price_sd": 51.3
+        },
+        "0.1": {
+          "price_sd": 45.7
+        },
+        "0.25": {
+          "price_sd": 37.3
+        },
+        "0.5": {
+          "price_sd": 25.3
+        },
+        "0.75": {
+          "price_sd": 14.2
         }
       }
     }

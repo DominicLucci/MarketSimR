@@ -3,6 +3,11 @@
     python -m marketsim.run --seed 1 --informed-share 0.25
     python -m marketsim.run --seed 1 --informed-share 0.25 --trace-step 200
     python -m marketsim.run --seed 1 --informed-share 0.25 --save results/run1
+    python -m marketsim.run --seed 1 --informed-share 0.25 --pilot-rules
+
+Runs the frozen baseline (learning from prices with calibrated trust, urgency margin) at
+the chosen share; --pilot-rules runs the plain rules of the pilot instead (signals only,
+fixed margin).
 """
 
 from __future__ import annotations
@@ -69,9 +74,16 @@ def trace_text(result: RunResult, step: int) -> str:
     gap = d["target"] - d["shares"]
     direction = "minus" if d["side"] == "buy" else "plus"
     rounding = "down" if d["side"] == "buy" else "up"
+    margin = d.get("margin", config.margin)
+    if config.urgency_scale > 0:
+        urgency = min(1.0, abs(gap) / config.urgency_scale)
+        lines.append(
+            f"  urgency {urgency:.0%} ({abs(gap)} of {config.urgency_scale} shares from target): "
+            f"margin {dollars(config.margin)} x (1 - 2 x {urgency:.2f}) = {dollars(margin)}"
+        )
     lines.append(
         f"  decides: {d['reason']} by {abs(gap)}, so {d['side']} {d['quantity']} at estimate {direction} "
-        f"margin {dollars(config.margin)}, rounded {rounding} = {dollars(d['price'])}"
+        f"margin {dollars(margin)}, rounded {rounding} = {dollars(d['price'])}"
     )
     if d["order_id"] is None:
         lines.append("  result: order rejected")
@@ -94,9 +106,15 @@ def main(argv: list[str] | None = None) -> RunResult:
     parser.add_argument("--steps", type=int, default=DEFAULTS.n_steps)
     parser.add_argument("--trace-step", type=int, help="explain the decision made at this step")
     parser.add_argument("--save", help="directory to write the run to")
+    parser.add_argument("--pilot-rules", action="store_true", help="signals only and a fixed margin, as in the pilot")
     args = parser.parse_args(argv)
 
-    config = SimConfig(seed=args.seed, informed_share=args.informed_share, n_steps=args.steps)
+    if args.pilot_rules:
+        config = SimConfig(seed=args.seed, informed_share=args.informed_share, n_steps=args.steps)
+    else:
+        from .experiment import baseline_config
+
+        config = baseline_config(args.informed_share, seed=args.seed, n_steps=args.steps)
     result = run_simulation(config)
     print(summary_text(result))
     if args.trace_step is not None:

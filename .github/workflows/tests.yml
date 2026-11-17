@@ -30,11 +30,6 @@ jobs:
           python -m marketsim.experiment --check --out results/robustness
           python -m marketsim.experiment --check --out results/news_sign
           python -m marketsim.glosten_milgrom --check
-      - name: Rerun the trust calibration and compare with the stored values
-        run: |
-          python -m marketsim.calibrate --check
-          python -m marketsim.calibrate --check --design scheduled_news
-          python -m marketsim.calibrate --check --design robustness
 
   tested-versions:
     name: Python 3.13, the exact versions the results were made with
@@ -52,3 +47,20 @@ jobs:
       - run: python -m marketsim.experiment --check --out results/robustness
       - run: python -m marketsim.experiment --check --out results/news_sign
       - run: python -m marketsim.glosten_milgrom --check
+
+  calibration:
+    name: Trust calibration still holds (${{ matrix.design }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        design: [informed_share, scheduled_news, robustness]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install -r requirements-tested.txt
+      - run: python -m pip install --no-deps -e .
+      - name: Rerun the bisection for every calibrated variant and compare with the stored values
+        run: python -m marketsim.calibrate --check --design ${{ matrix.design }}

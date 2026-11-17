@@ -8,8 +8,13 @@ Baseline rule (provisional, see docs/model_rules.md section 7):
 * Inventory sets the side and the size. Below target, buy; above target, sell; at target,
   do nothing. Size is the gap to target, capped by max_order_size and by what the account
   can fund.
-* The signal sets the price. A buyer bids its signal minus the margin, rounded down. A
-  seller offers its signal plus the margin, rounded up.
+* The estimate sets the price. A buyer bids its estimate minus the margin, rounded down. A
+  seller offers its estimate plus the margin, rounded up.
+* With urgency on (urgency_scale > 0), the margin shrinks with distance from target:
+  urgency = min(1, |gap| / urgency_scale) and margin x (1 - 2 x urgency), from the full
+  margin at target to minus the margin (paying up to the margin beyond the estimate) when
+  the gap is urgency_scale shares or more. Two traders with the same estimate then trade
+  exactly when their urgencies add up to at least one.
 * Traders in this baseline do not use the public quotes to revise their estimate. With
   the learn_from_prices option they replace the signal by a weighted average of the
   signal and the mid-quote, leaning on the price more when their own signal is noisier.
@@ -55,14 +60,24 @@ def estimate_value(view: TraderView, price_sd: float | None = None) -> float:
     return (1 - weight_on_price) * view.signal + weight_on_price * mid
 
 
+def effective_margin(margin: float, gap: int, urgency_scale: int = 0) -> float:
+    """The margin a trader keeps, in ticks. Fixed when urgency_scale is 0; otherwise it
+    falls linearly from +margin at the target to -margin at urgency_scale shares away."""
+    if urgency_scale <= 0:
+        return margin
+    urgency = min(1.0, abs(gap) / urgency_scale)
+    return margin * (1.0 - 2.0 * urgency)
+
+
 def decide(
-    view: TraderView, margin: float, max_order_size: int, price_sd: float | None = None
+    view: TraderView, margin: float, max_order_size: int, price_sd: float | None = None, urgency_scale: int = 0
 ) -> tuple[Intent | None, str]:
     """Return the order to send (or None) and a short reason, for the decision trace."""
     estimate = estimate_value(view, price_sd)
     gap = view.target_shares - view.shares
     if gap == 0:
         return None, "at target"
+    margin = effective_margin(margin, gap, urgency_scale)
 
     if gap > 0:
         price = floor(estimate - margin)

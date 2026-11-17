@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, fields, replace
 from typing import Any
 
 # Bump when a rule changes in a way that changes results for the same config and seed.
-MODEL_VERSION = "0.2.0-pilot"
+MODEL_VERSION = "1.0.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +48,10 @@ class SimConfig:
     # mid-quote typically is, in ticks.
     learn_from_prices: bool = False
     price_sd: float = 30.0
+    # Urgency. 0 keeps the margin fixed. Otherwise a trader's margin shrinks with its
+    # distance from target: margin x (1 - 2 x min(1, |gap| / urgency_scale)), from +margin at
+    # target to -margin (paying up to the margin above its estimate) urgency_scale shares away.
+    urgency_scale: int = 0
     max_need: int = 5  # inventory target = initial_shares + need, need in [-max_need, max_need]
     max_order_size: int = 5
     order_lifetime: int = 80  # steps before a resting order expires
@@ -76,6 +80,8 @@ class SimConfig:
             raise ValueError("news_every must be 0 (random news) or a positive whole number of steps")
         if self.initial_value <= 0 or self.initial_cash < 0 or self.initial_shares < 0:
             raise ValueError("initial value must be positive and endowments non-negative")
+        if type(self.urgency_scale) is not int or self.urgency_scale < 0:
+            raise ValueError("urgency_scale must be 0 (fixed margin) or a positive whole number of shares")
         if min(self.max_order_size, self.order_lifetime, self.quote_sample_every) < 1 or self.max_need < 0:
             raise ValueError("order size, lifetime and sampling interval must be at least 1")
 
