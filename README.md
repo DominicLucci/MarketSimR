@@ -19,7 +19,7 @@ taken under the pilot rules.)
 > **Status: model 1.0.0, configuration frozen on 2026-11-17.** The engine, market model,
 > four saved experiments, a theory benchmark and a local dashboard run and are tested, and
 > GitHub reinstalls and rechecks everything on each push. The pilot that led to this
-> configuration is kept at git tag `pilot-0.2.0`. [docs/STATUS.md](docs/STATUS.md) lists
+> configuration is kept at commit `1430ebb`. [docs/STATUS.md](docs/STATUS.md) lists
 > what is done, what was checked and what is next.
 
 ## The baseline market
@@ -217,7 +217,7 @@ Calibrated trust is recomputed for this market.
 
 ### The pilot
 
-The pilot used signals only and a fixed $0.20 margin (git tag `pilot-0.2.0` has its code
+The pilot used signals only and a fixed $0.20 margin (commit `1430ebb` has its code
 and results). Its results set three of the rules above: less-informed traders ignoring a
 far better price was hard to defend; learning with a fixed margin stopped most trade; and
 learning with a fixed, uncalibrated trust mostly measured the wrong trust. Two pilot

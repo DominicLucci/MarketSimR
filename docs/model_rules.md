@@ -124,7 +124,7 @@ decision from its inputs to its fills.
 
 ### Decisions taken for 1.0.0, and why
 
-The pilot (model 0.2.0-pilot, git tag `pilot-0.2.0`) used signals only and a fixed $0.20
+The pilot (model 0.2.0-pilot, commit `1430ebb`) used signals only and a fixed $0.20
 margin. Its results decided four rules:
 
 - **Learning from prices: on, with calibrated trust.** A trader whose signal is typically

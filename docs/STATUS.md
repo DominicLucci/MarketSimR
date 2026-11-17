@@ -13,8 +13,8 @@ pick up.
 | 5 | Local dashboard on the shared runner, running the frozen baseline | Done and tested; does not show the newer measures |
 | 6 | Benchmark, README, automatic checks on a clean machine | Done; README numbers are model 1.0.0 results |
 
-`main` holds everything. GitHub runs the checks on every push. The pilot is at git tag
-`pilot-0.2.0`.
+`main` holds everything. GitHub runs the checks on every push. The last pilot commit is
+`1430ebb` (`git checkout 1430ebb` to see the pilot code and results).
 
 ## Session 8 (2026-11-17)
 
